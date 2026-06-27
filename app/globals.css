@@ -39,6 +39,8 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-profit: var(--profit);
+  --color-profit-foreground: var(--profit-foreground);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -49,24 +51,32 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Cool, faintly green-tinted neutrals (chroma toward the emerald brand hue ~165)
+     so the surface reads designed, not flat gray. Cards stay pure white to lift
+     above the tinted page background. */
+  --background: oklch(0.985 0.004 165);
+  --foreground: oklch(0.18 0.012 165);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.18 0.012 165);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.18 0.012 165);
+  /* Emerald brand: primary actions, active selection, focus, premium-on. */
+  --primary: oklch(0.55 0.124 163);
+  --primary-foreground: oklch(0.99 0.01 165);
+  --secondary: oklch(0.96 0.008 165);
+  --secondary-foreground: oklch(0.27 0.02 165);
+  --muted: oklch(0.965 0.006 165);
+  /* Darkened to clear WCAG AA (~4.6:1) on white/card for secondary data. */
+  --muted-foreground: oklch(0.475 0.02 165);
+  --accent: oklch(0.95 0.018 163);
+  --accent-foreground: oklch(0.3 0.05 163);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.9 0.008 165);
+  --input: oklch(0.9 0.008 165);
+  --ring: oklch(0.55 0.124 163);
+  /* Semantic profit color for net / route-daily-profit figures. */
+  --profit: oklch(0.5 0.13 159);
+  --profit-foreground: oklch(0.99 0.01 165);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -84,24 +94,26 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.165 0.012 165);
+  --foreground: oklch(0.97 0.005 165);
+  --card: oklch(0.215 0.014 165);
+  --card-foreground: oklch(0.97 0.005 165);
+  --popover: oklch(0.215 0.014 165);
+  --popover-foreground: oklch(0.97 0.005 165);
+  --primary: oklch(0.72 0.135 163);
+  --primary-foreground: oklch(0.18 0.03 165);
+  --secondary: oklch(0.28 0.015 165);
+  --secondary-foreground: oklch(0.97 0.005 165);
+  --muted: oklch(0.28 0.015 165);
+  --muted-foreground: oklch(0.72 0.018 165);
+  --accent: oklch(0.3 0.03 163);
+  --accent-foreground: oklch(0.95 0.01 165);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
+  --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: oklch(0.72 0.135 163);
+  --profit: oklch(0.8 0.15 160);
+  --profit-foreground: oklch(0.18 0.03 165);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);

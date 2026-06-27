@@ -21,7 +21,11 @@ export function FiltersForm({ settings }: { settings: FlipSettings }) {
         <CardTitle className="text-base">Filters</CardTitle>
       </CardHeader>
       <CardContent>
-        <form action={saveFiltersAction} className="space-y-3">
+        <form
+          key={`${settings.disposableCash}-${settings.dailyTarget}-${settings.minMarginPct}-${settings.maxStalenessHr}-${settings.minDailyVolume}`}
+          action={saveFiltersAction}
+          className="space-y-3"
+        >
           {fields.map((f) => (
             <div key={f.name} className="space-y-1">
               <Label htmlFor={f.name}>{f.label}</Label>

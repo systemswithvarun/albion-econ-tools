@@ -75,7 +75,7 @@ export function ResultsTable({ routes }: { routes: FlipRoute[] }) {
                     type="button"
                     onClick={() => toggle(c.key)}
                     className={`inline-flex items-center gap-1 font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm ${
-                      active ? 'text-foreground' : 'text-muted-foreground'
+                      active ? 'text-primary' : 'text-muted-foreground'
                     } ${c.numeric ? 'flex-row-reverse' : ''}`}
                   >
                     {c.label}
@@ -99,11 +99,11 @@ export function ResultsTable({ routes }: { routes: FlipRoute[] }) {
                 {r.baseName}{r.quality > 1 ? ` Q${r.quality}` : ''}
                 {r.inBasket && <Badge variant="secondary" className="ml-2 align-middle">basket</Badge>}
               </TableCell>
-              <TableCell className="text-right tabular-nums">{fmt(r.netPerUnit)}</TableCell>
+              <TableCell className="text-right tabular-nums font-medium text-profit">{fmt(r.netPerUnit)}</TableCell>
               <TableCell className="text-right tabular-nums">{r.marginPct.toFixed(1)}%</TableCell>
               <TableCell className="text-right tabular-nums">{fmt(r.dailyVolume)}</TableCell>
               <TableCell className="text-right tabular-nums">{fmt(r.unitsAffordable)}</TableCell>
-              <TableCell className="text-right font-semibold tabular-nums">{fmt(r.routeDailyProfit)}</TableCell>
+              <TableCell className="text-right font-semibold tabular-nums text-profit">{fmt(r.routeDailyProfit)}</TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">{r.buyCity} @ <span className="tabular-nums">{fmt(r.buyPrice)}</span></TableCell>
               <TableCell className="whitespace-nowrap text-muted-foreground">{r.sellCity} @ <span className="tabular-nums">{fmt(r.sellPrice)}</span></TableCell>
               <TableCell className="text-right tabular-nums text-muted-foreground text-xs">

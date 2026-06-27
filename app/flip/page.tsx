@@ -35,13 +35,14 @@ export default async function FlipPage() {
 
   return (
     <main className="container mx-auto p-6 max-w-7xl space-y-6">
-      <header className="flex items-center justify-between gap-4 flex-wrap">
+      <header className="flex items-center justify-between gap-4 flex-wrap border-b pb-5">
         <div>
-          <h1 className="text-2xl font-bold">Flip Screener</h1>
-          <p className="text-muted-foreground text-sm">
-            {scan.routes.length} routes · basket profit{' '}
-            <span className="text-foreground font-medium">{scan.basketProfit.toLocaleString()}</span> for{' '}
-            {scan.basketCost.toLocaleString()} silver
+          <h1 className="text-2xl font-bold tracking-tight">Flip Screener</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            <span className="tabular-nums text-foreground font-medium">{scan.routes.length}</span> routes · basket profit{' '}
+            <span className="tabular-nums font-semibold text-profit">{scan.basketProfit.toLocaleString()}</span>
+            <span className="text-muted-foreground"> for </span>
+            <span className="tabular-nums text-foreground font-medium">{scan.basketCost.toLocaleString()}</span> silver
           </p>
         </div>
         <FlipControls premium={settings.premium} />
