@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import type { ItemMarket, FlipFilters, PriceQuote } from './flip'
 
-export interface FlipSettings extends FlipFilters {}
+export type FlipSettings = FlipFilters
 
 /** Read the single settings row, mapping DB columns to FlipFilters. */
 export async function getFlipSettings(): Promise<FlipSettings> {
