@@ -9,7 +9,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "seed": "npx tsx db/seed/seed-items.ts"
+    "seed": "npx tsx db/seed/seed-items.ts",
+    "backfill-names": "npx tsx db/seed/backfill-names.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
