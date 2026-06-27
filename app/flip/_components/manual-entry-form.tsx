@@ -3,12 +3,12 @@
 import { useRef } from 'react'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { submitGuildPriceAction } from '../actions'
+import { SubmitButton } from './submit-button'
 
 export function ManualEntryForm({ cities }: { cities: string[] }) {
   const formRef = useRef<HTMLFormElement>(null)
@@ -59,7 +59,7 @@ export function ManualEntryForm({ cities }: { cities: string[] }) {
             <Label htmlFor="price">Price</Label>
             <Input id="price" name="price" type="number" min={1} required />
           </div>
-          <Button type="submit" className="w-full">Submit price</Button>
+          <SubmitButton className="w-full" pendingText="Submitting…">Submit price</SubmitButton>
         </form>
       </CardContent>
     </Card>

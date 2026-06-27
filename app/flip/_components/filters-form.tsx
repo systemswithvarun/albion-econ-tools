@@ -2,9 +2,9 @@
 
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { saveFiltersAction } from '../actions'
+import { SubmitButton } from './submit-button'
 import type { FlipSettings } from '@/lib/flip-data'
 
 export function FiltersForm({ settings }: { settings: FlipSettings }) {
@@ -28,7 +28,7 @@ export function FiltersForm({ settings }: { settings: FlipSettings }) {
               <Input id={f.name} name={f.name} type="number" step={f.step ?? '1'} defaultValue={f.value} />
             </div>
           ))}
-          <Button type="submit" className="w-full">Apply filters</Button>
+          <SubmitButton className="w-full" pendingText="Applying…">Apply filters</SubmitButton>
         </form>
       </CardContent>
     </Card>

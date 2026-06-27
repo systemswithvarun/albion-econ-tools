@@ -49,8 +49,11 @@ export function ResultsTable({ routes }: { routes: FlipRoute[] }) {
 
   if (routes.length === 0) {
     return (
-      <div className="rounded-md border p-8 text-center text-muted-foreground text-sm">
-        No routes match the current filters. Build the watchlist, wait for a price fetch, or loosen filters.
+      <div className="rounded-md border border-dashed p-10 text-center">
+        <p className="text-sm font-medium">No routes match the current filters</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Build the watchlist, wait for the next price fetch, or loosen the filters.
+        </p>
       </div>
     )
   }
@@ -58,37 +61,52 @@ export function ResultsTable({ routes }: { routes: FlipRoute[] }) {
   return (
     <div className="rounded-md border overflow-x-auto">
       <Table>
-        <TableHeader>
+        <TableHeader className="sticky top-0 z-10 bg-background">
           <TableRow>
-            {COLUMNS.map((c) => (
-              <TableHead
-                key={c.key}
-                onClick={() => toggle(c.key)}
-                className={`cursor-pointer select-none ${c.numeric ? 'text-right' : ''}`}
-              >
-                {c.label}{sortKey === c.key ? (asc ? ' ↑' : ' ↓') : ''}
-              </TableHead>
-            ))}
+            {COLUMNS.map((c) => {
+              const active = sortKey === c.key
+              return (
+                <TableHead
+                  key={c.key}
+                  aria-sort={active ? (asc ? 'ascending' : 'descending') : 'none'}
+                  className={c.numeric ? 'text-right' : ''}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggle(c.key)}
+                    className={`inline-flex items-center gap-1 font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm ${
+                      active ? 'text-foreground' : 'text-muted-foreground'
+                    } ${c.numeric ? 'flex-row-reverse' : ''}`}
+                  >
+                    {c.label}
+                    <span aria-hidden className="w-2 text-center">{active ? (asc ? '↑' : '↓') : ''}</span>
+                  </button>
+                </TableHead>
+              )
+            })}
             <TableHead>Buy</TableHead>
             <TableHead>Sell</TableHead>
-            <TableHead className="text-right">Age (b/s)</TableHead>
+            <TableHead className="text-right">Buy/sell age</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {sorted.map((r, i) => (
-            <TableRow key={`${r.itemId}-${r.quality}-${r.buyCity}-${r.sellCity}-${i}`} className={r.inBasket ? 'bg-primary/5' : ''}>
+            <TableRow
+              key={`${r.itemId}-${r.quality}-${r.buyCity}-${r.sellCity}-${i}`}
+              className={r.inBasket ? 'bg-primary/5 hover:bg-primary/10' : undefined}
+            >
               <TableCell className="font-medium">
                 {r.baseName}{r.quality > 1 ? ` Q${r.quality}` : ''}
-                {r.inBasket && <Badge variant="secondary" className="ml-2">basket</Badge>}
+                {r.inBasket && <Badge variant="secondary" className="ml-2 align-middle">basket</Badge>}
               </TableCell>
-              <TableCell className="text-right">{fmt(r.netPerUnit)}</TableCell>
-              <TableCell className="text-right">{r.marginPct.toFixed(1)}%</TableCell>
-              <TableCell className="text-right">{fmt(r.dailyVolume)}</TableCell>
-              <TableCell className="text-right">{fmt(r.unitsAffordable)}</TableCell>
-              <TableCell className="text-right font-semibold">{fmt(r.routeDailyProfit)}</TableCell>
-              <TableCell>{r.buyCity} @ {fmt(r.buyPrice)}</TableCell>
-              <TableCell>{r.sellCity} @ {fmt(r.sellPrice)}</TableCell>
-              <TableCell className="text-right text-muted-foreground text-xs">
+              <TableCell className="text-right tabular-nums">{fmt(r.netPerUnit)}</TableCell>
+              <TableCell className="text-right tabular-nums">{r.marginPct.toFixed(1)}%</TableCell>
+              <TableCell className="text-right tabular-nums">{fmt(r.dailyVolume)}</TableCell>
+              <TableCell className="text-right tabular-nums">{fmt(r.unitsAffordable)}</TableCell>
+              <TableCell className="text-right font-semibold tabular-nums">{fmt(r.routeDailyProfit)}</TableCell>
+              <TableCell className="whitespace-nowrap text-muted-foreground">{r.buyCity} @ <span className="tabular-nums">{fmt(r.buyPrice)}</span></TableCell>
+              <TableCell className="whitespace-nowrap text-muted-foreground">{r.sellCity} @ <span className="tabular-nums">{fmt(r.sellPrice)}</span></TableCell>
+              <TableCell className="text-right tabular-nums text-muted-foreground text-xs">
                 {r.buyAgeHr.toFixed(1)}/{r.sellAgeHr.toFixed(1)}h
               </TableCell>
             </TableRow>
