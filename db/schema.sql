@@ -7,7 +7,8 @@ create table if not exists items (
   category     text not null,             -- weapon|armor|offhand|head|shoes|bag|satchel|resource|...
   is_artifact  bool not null default false,
   has_quality  bool not null default true,
-  in_watchlist bool not null default false
+  in_watchlist bool not null default false,
+  display_name text
 );
 
 -- price_observations: one row per observed price tick
@@ -78,3 +79,13 @@ from price_observations po
 join items i on i.item_id = po.item_id
 where i.in_watchlist = true
 order by po.item_id, po.city, po.quality, po.side, po.observed_at desc, po.source desc;
+
+-- Case-insensitive substring search over name + id (price checker search).
+create index if not exists idx_items_display_name_trgm on items (lower(display_name));
+create index if not exists idx_items_item_id_lower on items (lower(item_id));
+
+-- Single-user favorites (no auth/user column in v1).
+create table if not exists favorites (
+  item_id    text primary key references items(item_id),
+  created_at timestamptz not null default now()
+);
