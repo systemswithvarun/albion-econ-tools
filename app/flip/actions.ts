@@ -31,7 +31,7 @@ export async function rebuildWatchlistAction(): Promise<void> {
 
 export async function submitGuildPriceAction(formData: FormData): Promise<void> {
   await addGuildPrice({
-    itemId: String(formData.get('itemId') ?? '').trim(),
+    itemId: String(formData.get('itemId') ?? '').trim().toUpperCase(),
     city: String(formData.get('city') ?? '').trim(),
     quality: Number(formData.get('quality') ?? 1),
     side: formData.get('side') === 'buy_order' ? 'buy_order' : 'sell_order',

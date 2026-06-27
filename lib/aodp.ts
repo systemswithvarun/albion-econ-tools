@@ -63,10 +63,11 @@ export interface DailyVolumeInsert {
 export function parseCurrentPrices(raw: AodpPriceRow[]): PriceObservationInsert[] {
   const rows: PriceObservationInsert[] = []
   for (const r of raw) {
+    const city = r.city.replace(/\s+/g, '')
     if (r.sell_price_min > 0) {
       rows.push({
         item_id: r.item_id,
-        city: r.city,
+        city,
         quality: r.quality,
         side: 'sell_order',
         price: r.sell_price_min,
@@ -77,7 +78,7 @@ export function parseCurrentPrices(raw: AodpPriceRow[]): PriceObservationInsert[
     if (r.buy_price_max > 0) {
       rows.push({
         item_id: r.item_id,
-        city: r.city,
+        city,
         quality: r.quality,
         side: 'buy_order',
         price: r.buy_price_max,
@@ -94,7 +95,7 @@ export function parseHistory(raw: AodpHistoryRow[]): DailyVolumeInsert[] {
   return raw.map((r) => {
     const total = r.data.reduce((sum, d) => sum + d.item_count, 0)
     const avg = r.data.length > 0 ? Math.round(total / r.data.length) : 0
-    return { item_id: r.item_id, city: r.location, avg_sold: avg, fetched_at: now }
+    return { item_id: r.item_id, city: r.location.replace(/\s+/g, ''), avg_sold: avg, fetched_at: now }
   })
 }
 

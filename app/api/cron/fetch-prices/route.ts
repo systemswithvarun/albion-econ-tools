@@ -29,17 +29,23 @@ export async function GET() {
 
     await upsertPriceObservations([...withQualRows, ...noQualRows])
 
-    // Volume: one city at a time (AODP history endpoint takes one city)
-    for (const city of CITIES) {
-      const volumeRows = await getHistory(itemIds, city)
-      await upsertDailyVolume(volumeRows)
+    // Volume: one city at a time. Secondary data — must not fail the whole run.
+    let volume_ok = true
+    try {
+      for (const city of CITIES) {
+        const volumeRows = await getHistory(itemIds, city)
+        await upsertDailyVolume(volumeRows)
+      }
+    } catch (e) {
+      volume_ok = false
+      console.warn('[cron/fetch-prices] volume step failed:', e instanceof Error ? e.message : JSON.stringify(e))
     }
 
     const elapsed_ms = Date.now() - started
-    console.log(`[cron/fetch-prices] OK — ${items.length} items, ${elapsed_ms}ms`)
-    return NextResponse.json({ ok: true, items_fetched: items.length, elapsed_ms })
+    console.log(`[cron/fetch-prices] OK — ${items.length} items, volume_ok=${volume_ok}, ${elapsed_ms}ms`)
+    return NextResponse.json({ ok: true, items_fetched: items.length, volume_ok, elapsed_ms })
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = err instanceof Error ? err.message : JSON.stringify(err)
     console.error('[cron/fetch-prices] ERROR', message)
     return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }

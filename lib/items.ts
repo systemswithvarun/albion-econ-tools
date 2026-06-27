@@ -11,14 +11,25 @@ export interface Item {
   in_watchlist: boolean
 }
 
-/** All items in watchlist — used by cron to know what to fetch */
+/** All items in watchlist — used by cron to know what to fetch.
+ *  Paginates past PostgREST's 1000-row cap. */
 export async function getWatchlistItems(): Promise<Item[]> {
-  const { data, error } = await supabase
-    .from('items')
-    .select('*')
-    .eq('in_watchlist', true)
-  if (error) throw error
-  return data as Item[]
+  const pageSize = 1000
+  let from = 0
+  const all: Item[] = []
+  for (;;) {
+    const { data, error } = await supabase
+      .from('items')
+      .select('*')
+      .eq('in_watchlist', true)
+      .range(from, from + pageSize - 1)
+    if (error) throw error
+    const batch = (data ?? []) as Item[]
+    all.push(...batch)
+    if (batch.length < pageSize) break
+    from += pageSize
+  }
+  return all
 }
 
 /** Live price for (item_id, city, quality, side).
@@ -68,9 +79,13 @@ export async function upsertDailyVolume(
   rows: { item_id: string; city: string; avg_sold: number; fetched_at: string }[]
 ): Promise<void> {
   if (rows.length === 0) return
+  // Dedupe by (item_id, city) — a batch can't touch the same ON CONFLICT row twice
+  const byKey = new Map<string, typeof rows[number]>()
+  for (const r of rows) byKey.set(`${r.item_id}|${r.city}`, r)
+  const deduped = [...byKey.values()]
   const { error } = await supabase
     .from('daily_volume')
-    .upsert(rows, { onConflict: 'item_id,city' })
+    .upsert(deduped, { onConflict: 'item_id,city' })
   if (error) throw error
 }
 
