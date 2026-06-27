@@ -41,6 +41,11 @@ create table if not exists settings (
   id      int primary key default 1,
   premium bool not null default false,
   region  text not null default 'west',
+  disposable_cash  bigint  not null default 0,
+  daily_target     bigint  not null default 0,
+  min_margin_pct   numeric not null default 5,
+  max_staleness_hr int     not null default 6,
+  min_daily_volume int     not null default 0,
   constraint single_row check (id = 1)
 );
 
@@ -54,3 +59,22 @@ create table if not exists recipes (
   is_returnable bool not null default true,  -- false for artifact resources
   primary key (item_id, resource_id)
 );
+
+-- Canonical latest price per (item, city, quality, side) for watchlist items.
+-- distinct on + order by observed_at desc, source desc encodes the Doc 1 rule:
+-- newest wins; on an exact observed_at tie, 'guild' > 'aodp' lexicographically.
+create or replace view flip_latest_prices as
+select distinct on (po.item_id, po.city, po.quality, po.side)
+  po.item_id,
+  i.base_name,
+  i.category,
+  po.city,
+  po.quality,
+  po.side,
+  po.price,
+  po.source,
+  po.observed_at
+from price_observations po
+join items i on i.item_id = po.item_id
+where i.in_watchlist = true
+order by po.item_id, po.city, po.quality, po.side, po.observed_at desc, po.source desc;
