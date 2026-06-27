@@ -275,17 +275,39 @@ async function seed(): Promise<void> {
   const supabase = createClient(url!, key!, { auth: { persistSession: false } })
 
   const BATCH = 500
+  let ok = 0
+  const failures: { at: number; message: string; sampleIds: string[] }[] = []
+
   for (let i = 0; i < rows.length; i += BATCH) {
     const batch = rows.slice(i, i + BATCH)
     const { error } = await supabase.from('items').upsert(batch, { onConflict: 'item_id' })
     if (error) {
-      console.error(`Upsert failed at batch starting ${i}:`, error.message)
-      process.exit(1)
+      // Do NOT abort the whole seed on one bad batch — record it and keep going,
+      // so a single failing chunk can't leave the table mostly empty.
+      failures.push({ at: i, message: error.message, sampleIds: batch.slice(0, 3).map((r) => r.item_id) })
+      console.error(`Batch @${i} FAILED: ${error.message} (e.g. ${batch.slice(0, 3).map((r) => r.item_id).join(', ')})`)
+    } else {
+      ok += batch.length
     }
-    console.log(`Upserted ${Math.min(i + BATCH, rows.length)} / ${rows.length}`)
+    console.log(`Progress ${Math.min(i + BATCH, rows.length)} / ${rows.length} (ok=${ok}, failed batches=${failures.length})`)
   }
 
-  console.log(`Done. Seeded ${rows.length} items.`)
+  // Verify what actually landed.
+  const { count, error: countErr } = await supabase
+    .from('items')
+    .select('*', { count: 'exact', head: true })
+
+  console.log('')
+  console.log('--- SEED SUMMARY ---')
+  console.log(`Rows attempted:        ${rows.length}`)
+  console.log(`Rows in failed batches:${rows.length - ok}`)
+  console.log(`Failed batches:        ${failures.length}`)
+  console.log(`Row count in table:    ${countErr ? `(count failed: ${countErr.message})` : count}`)
+  if (failures.length > 0) {
+    console.log('First failure detail:', JSON.stringify(failures[0], null, 2))
+    process.exit(1)
+  }
+  console.log('Done.')
 }
 
 seed().catch((err) => {
