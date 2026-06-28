@@ -76,11 +76,23 @@ describe('parseHistory', () => {
       {
         item_id: 'T4_SWORD',
         location: 'Thetford',
-        data: [{ item_count: 10 }, { item_count: 20 }],
+        data: [{ item_count: 10, avg_price: 100 }, { item_count: 20, avg_price: 200 }],
       },
     ]
     const rows = parseHistory(raw)
     expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({ item_id: 'T4_SWORD', city: 'Thetford', avg_sold: 15 })
+    expect(rows[0]).toMatchObject({ item_id: 'T4_SWORD', city: 'Thetford', avg_sold: 15, avg_price: 150 })
+  })
+
+  it('yields avg_price 0 when data points lack avg_price', () => {
+    const raw = [
+      {
+        item_id: 'T4_SWORD',
+        location: 'Thetford',
+        data: [{ item_count: 10 }, { item_count: 20 }],
+      },
+    ]
+    const rows = parseHistory(raw)
+    expect(rows[0]).toMatchObject({ avg_sold: 15, avg_price: 0 })
   })
 })

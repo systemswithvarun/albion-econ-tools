@@ -1,4 +1,5 @@
 import { instantBuyCost, instantSellNet } from './fees'
+import { ROYAL_CITIES } from './cities'
 
 export interface PriceQuote {
   city: string
@@ -50,6 +51,23 @@ export interface FlipRoute {
   realizable: number
   routeDailyProfit: number
   inBasket: boolean
+  bmFlagged: boolean
+  bmGap: BmGap | null
+}
+
+export const BM_FLOOR_MULTIPLIER = 1.10 // 10% covers 8% non-premium tax + margin
+
+export interface BmGap {
+  lowestAcquisition: number // cheapest standing SELL order across royal cities (instant-buy cost)
+  bmBuyOrder: number        // Black Market BUY order = buy_price_max (what you instant-SELL into)
+  floor: number             // break-even floor = lowestAcquisition * 1.10
+  flagged: boolean          // bmBuyOrder >= floor -> live profit window
+}
+
+/** Pure BM gap. acquisition = cheapest royal-city sell order; proceeds = BM buy order. */
+export function computeBmGap(lowestAcquisition: number, bmBuyOrder: number): BmGap {
+  const floor = lowestAcquisition * BM_FLOOR_MULTIPLIER
+  return { lowestAcquisition, bmBuyOrder, floor, flagged: lowestAcquisition > 0 && bmBuyOrder >= floor }
 }
 
 export interface ScanResult {
@@ -67,6 +85,13 @@ export function scanRoutes(markets: ItemMarket[], filters: FlipFilters, now: Dat
   const routes: FlipRoute[] = []
 
   for (const m of markets) {
+    const royalBuys = m.buyQuotes.filter((q) => (ROYAL_CITIES as readonly string[]).includes(q.city))
+    const lowestAcquisition = royalBuys.length > 0 ? Math.min(...royalBuys.map((q) => q.price)) : 0
+    const bmSell = m.sellQuotes.find((q) => q.city === 'BlackMarket')
+    const bmBuyOrder = bmSell?.price ?? 0
+    const bmGap = lowestAcquisition > 0 && bmBuyOrder > 0 ? computeBmGap(lowestAcquisition, bmBuyOrder) : null
+    const bmFlagged = bmGap?.flagged ?? false
+
     const freshBuys = m.buyQuotes.filter((q) => ageHr(q.observed_at, now) <= maxStalenessHr)
     const freshSells = m.sellQuotes.filter((q) => ageHr(q.observed_at, now) <= maxStalenessHr)
 
@@ -106,12 +131,18 @@ export function scanRoutes(markets: ItemMarket[], filters: FlipFilters, now: Dat
           realizable,
           routeDailyProfit,
           inBasket: false,
+          bmFlagged,
+          bmGap,
         })
       }
     }
   }
 
-  routes.sort((a, b) => b.routeDailyProfit - a.routeDailyProfit || b.netPerUnit - a.netPerUnit)
+  routes.sort((a, b) =>
+    Number(b.bmFlagged) - Number(a.bmFlagged) ||
+    b.routeDailyProfit - a.routeDailyProfit ||
+    b.netPerUnit - a.netPerUnit,
+  )
 
   let remaining = disposableCash
   let basketProfit = 0

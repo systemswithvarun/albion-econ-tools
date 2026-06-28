@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { scanRoutes, type ItemMarket, type FlipFilters } from '../flip'
+import { scanRoutes, computeBmGap, type ItemMarket, type FlipFilters } from '../flip'
 
 const NOW = new Date('2026-06-27T12:00:00Z')
 const fresh = '2026-06-27T11:30:00Z' // 0.5h old
@@ -120,5 +120,38 @@ describe('scanRoutes — ranking + basket', () => {
     )
     expect(routes.some((r) => r.inBasket)).toBe(true)
     expect(basketProfit).toBeGreaterThanOrEqual(1000)
+  })
+})
+
+describe('computeBmGap', () => {
+  it('flags when BM buy order >= floor (acq 500 -> floor 550, bm 560)', () => {
+    const g = computeBmGap(500, 560)
+    expect(g.floor).toBeCloseTo(550)
+    expect(g.flagged).toBe(true)
+  })
+  it('does not flag at 540 (< 550)', () => {
+    expect(computeBmGap(500, 540).flagged).toBe(false)
+  })
+  it('does not flag with no acquisition price', () => {
+    expect(computeBmGap(0, 999).flagged).toBe(false)
+  })
+})
+
+describe('scanRoutes — BM flag sort', () => {
+  it('sorts flagged routes above unflagged', () => {
+    const flagged: ItemMarket = {
+      itemId: 'A', baseName: 'A', displayName: 'A', enchant: 0, quality: 1, category: 'bags',
+      buyQuotes: [{ city: 'Lymhurst', price: 500, observed_at: fresh }],
+      sellQuotes: [{ city: 'BlackMarket', price: 560, observed_at: fresh }],
+      volumeByCity: { BlackMarket: 100 },
+    }
+    const plain: ItemMarket = {
+      itemId: 'B', baseName: 'B', displayName: 'B', enchant: 0, quality: 1, category: 'bags',
+      buyQuotes: [{ city: 'Martlock', price: 100, observed_at: fresh }],
+      sellQuotes: [{ city: 'Caerleon', price: 100000, observed_at: fresh }],
+      volumeByCity: { Caerleon: 100000 },
+    }
+    const { routes } = scanRoutes([plain, flagged], baseFilters(), NOW)
+    expect(routes[0].bmFlagged).toBe(true)
   })
 })

@@ -38,7 +38,7 @@ export interface AodpPriceRow {
 export interface AodpHistoryRow {
   item_id: string
   location: string
-  data: { item_count: number; timestamp?: string }[]
+  data: { item_count: number; avg_price?: number; timestamp?: string }[]
 }
 
 export interface PriceObservationInsert {
@@ -55,6 +55,7 @@ export interface DailyVolumeInsert {
   item_id: string
   city: string
   avg_sold: number
+  avg_price: number
   fetched_at: string
 }
 
@@ -93,9 +94,13 @@ export function parseCurrentPrices(raw: AodpPriceRow[]): PriceObservationInsert[
 export function parseHistory(raw: AodpHistoryRow[]): DailyVolumeInsert[] {
   const now = new Date().toISOString()
   return raw.map((r) => {
-    const total = r.data.reduce((sum, d) => sum + d.item_count, 0)
-    const avg = r.data.length > 0 ? Math.round(total / r.data.length) : 0
-    return { item_id: r.item_id, city: r.location.replace(/\s+/g, ''), avg_sold: avg, fetched_at: now }
+    const count = r.data.reduce((s, d) => s + d.item_count, 0)
+    const avgSold = r.data.length > 0 ? Math.round(count / r.data.length) : 0
+    const priced = r.data.filter((d) => typeof d.avg_price === 'number')
+    const avgPrice = priced.length > 0
+      ? Math.round(priced.reduce((s, d) => s + (d.avg_price as number), 0) / priced.length)
+      : 0
+    return { item_id: r.item_id, city: r.location.replace(/\s+/g, ''), avg_sold: avgSold, avg_price: avgPrice, fetched_at: now }
   })
 }
 

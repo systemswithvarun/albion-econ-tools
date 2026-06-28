@@ -76,7 +76,7 @@ export async function upsertPriceObservations(
 
 /** Upsert daily volume (overwrites per item+city) */
 export async function upsertDailyVolume(
-  rows: { item_id: string; city: string; avg_sold: number; fetched_at: string }[]
+  rows: { item_id: string; city: string; avg_sold: number; avg_price: number; fetched_at: string }[]
 ): Promise<void> {
   if (rows.length === 0) return
   // Dedupe by (item_id, city) — a batch can't touch the same ON CONFLICT row twice
