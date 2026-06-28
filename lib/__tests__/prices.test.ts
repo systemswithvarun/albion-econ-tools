@@ -1,5 +1,5 @@
-import { describe, it, expect, afterAll } from 'vitest'
-import { reduceLivePrices, type RawObservation } from '../prices'
+import { describe, it, expect, afterAll, vi } from 'vitest'
+import { reduceLivePrices, isFresh, type RawObservation } from '../prices'
 import { toItemId, buildNameMap } from '../../db/seed/name-map'
 
 describe('name-map', () => {
@@ -70,6 +70,13 @@ describe('reduceLivePrices', () => {
   })
 })
 
+describe('isFresh', () => {
+  const now = new Date('2026-06-27T12:00:00Z').getTime()
+  it('false for null', () => expect(isFresh(null, now)).toBe(false))
+  it('true within 15 min', () => expect(isFresh('2026-06-27T11:50:00Z', now)).toBe(true))
+  it('false past 15 min', () => expect(isFresh('2026-06-27T11:40:00Z', now)).toBe(false))
+})
+
 // Integration tests hit the real Supabase project. They are OPT-IN via RUN_DB_TESTS=1
 // (not merely "creds present"), so a default `pnpm test` stays green and offline even
 // when .env.local has creds but the DB hasn't been migrated/backfilled yet.
@@ -105,6 +112,24 @@ dbDescribe('getLivePricesForItem (integration)', () => {
     const { getLivePricesForItem } = await import('../prices')
     const out = await getLivePricesForItem('T1_SILVERBAG_NONTRADABLE')
     expect(Array.isArray(out)).toBe(true)
+  })
+})
+
+dbDescribe('getItemPrices (integration)', () => {
+  it('fills a grid for a known item and caches within 15 min', async () => {
+    const prices = await import('../prices')
+    const id = 'T4_BAG'
+    const first = await prices.getItemPrices(id)
+    expect(first.length).toBeGreaterThan(0) // guard: must return a grid, not silently empty
+
+    // Second call: newest row is now < 15 min old, so it must take the fresh DB path
+    // and NOT hit AODP. Prove via the freshness branch: spy on getCurrentPrices.
+    const aodp = await import('../aodp')
+    const spy = vi.spyOn(aodp, 'getCurrentPrices')
+    const second = await prices.getItemPrices(id)
+    expect(second.length).toBeGreaterThan(0)
+    expect(spy).not.toHaveBeenCalled() // no AODP request on the cached path
+    spy.mockRestore()
   })
 })
 

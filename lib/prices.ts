@@ -1,4 +1,7 @@
 import { supabase } from './supabase'
+import { CITIES } from './cities'
+import { getCurrentPrices, type PriceObservationInsert } from './aodp'
+import { upsertPriceObservations } from './items'
 
 export type Side = 'buy_order' | 'sell_order'
 
@@ -36,6 +39,42 @@ export function reduceLivePrices(rows: RawObservation[]): LivePrice[] {
     else if (t === ct && r.source === 'guild' && cur.source !== 'guild') best.set(key, r)
   }
   return [...best.values()]
+}
+
+export const FRESH_MS = 15 * 60 * 1000
+
+/** Pure: is the newest observation within the freshness window? */
+export function isFresh(newestObservedAt: string | null, now: number, windowMs = FRESH_MS): boolean {
+  if (!newestObservedAt) return false
+  return now - new Date(newestObservedAt).getTime() < windowMs
+}
+
+const ALL_QUALITIES = [1, 2, 3, 4, 5]
+
+/**
+ * Live prices for ANY item (price-checker engine). Fresh path: if the newest stored
+ * observation is < 15 min old, return reduced DB rows. Stale/miss path: pull AODP for
+ * all cities + qualities in one call, upsert (source 'aodp'), then return reduced rows.
+ */
+export async function getItemPrices(itemId: string): Promise<LivePrice[]> {
+  const id = itemId.trim().toUpperCase()
+
+  const { data: newestRows, error: nErr } = await supabase
+    .from('price_observations')
+    .select('observed_at')
+    .eq('item_id', id)
+    .order('observed_at', { ascending: false })
+    .limit(1)
+  if (nErr) throw nErr
+  const newest = newestRows?.[0]?.observed_at ?? null
+
+  if (isFresh(newest, Date.now())) {
+    return getLivePricesForItem(id)
+  }
+
+  const fetched: PriceObservationInsert[] = await getCurrentPrices([id], [...CITIES], ALL_QUALITIES)
+  if (fetched.length > 0) await upsertPriceObservations(fetched)
+  return getLivePricesForItem(id)
 }
 
 /** Page a supabase query 1000 rows at a time (PostgREST default cap). */
