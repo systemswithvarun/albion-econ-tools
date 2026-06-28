@@ -81,7 +81,6 @@ where i.in_watchlist = true
 order by po.item_id, po.city, po.quality, po.side, po.observed_at desc, po.source desc;
 
 -- Case-insensitive substring search over name + id (price checker search).
-create index if not exists idx_items_display_name_trgm on items (lower(display_name));
 create index if not exists idx_items_item_id_lower on items (lower(item_id));
 
 -- Single-user favorites (no auth/user column in v1).
@@ -89,3 +88,22 @@ create table if not exists favorites (
   item_id    text primary key references items(item_id),
   created_at timestamptz not null default now()
 );
+
+create extension if not exists pg_trgm;
+
+-- Trigram GIN index for fast fuzzy + substring search on names.
+create index if not exists idx_items_display_name_gin
+  on items using gin (display_name gin_trgm_ops);
+
+-- Fuzzy item search: substring OR trigram-similar, ranked by similarity. Paginated.
+create or replace function search_items(q text, lim int default 50, off int default 0)
+returns setof items
+language sql stable
+as $$
+  select *
+  from items
+  where display_name ilike '%' || q || '%'
+     or similarity(display_name, q) > 0.2
+  order by similarity(display_name, q) desc, display_name asc
+  limit lim offset off
+$$;

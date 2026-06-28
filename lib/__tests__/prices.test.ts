@@ -105,6 +105,19 @@ dbDescribe('searchItems (integration)', () => {
     const { searchItems } = await import('../prices')
     expect(await searchItems('   ')).toEqual([])
   })
+  it('matches display names and tolerates typos', async () => {
+    const { searchItems } = await import('../prices')
+    const exact = await searchItems('satchel')
+    expect(exact.some((r) => /satchel/i.test(r.display_name))).toBe(true)
+    const typo1 = await searchItems('satchle')
+    const typo2 = await searchItems('stachel')
+    expect(typo1.length).toBeGreaterThan(0)
+    expect(typo2.length).toBeGreaterThan(0)
+  })
+  it('returns [] for gibberish, not an error', async () => {
+    const { searchItems } = await import('../prices')
+    expect(await searchItems('zzzqqxnope123')).toEqual([])
+  })
 })
 
 dbDescribe('getLivePricesForItem (integration)', () => {

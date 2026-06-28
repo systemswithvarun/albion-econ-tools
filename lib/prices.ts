@@ -93,24 +93,26 @@ async function selectAll<T>(
   return out
 }
 
-/** Case-insensitive substring over display_name AND item_id; paginated. Empty query -> []. */
+/** Fuzzy item search via pg_trgm RPC: substring OR trigram-similar, ranked. Empty query -> []. */
 export async function searchItems(
   query: string,
   opts?: { limit?: number; offset?: number },
 ): Promise<ItemSearchResult[]> {
   const term = query.trim()
   if (!term) return []
-  const limit = opts?.limit ?? 50
-  const offset = opts?.offset ?? 0
-  const safe = term.replace(/[%,()]/g, ' ')
-  const { data, error } = await supabase
-    .from('items')
-    .select(SELECT_COLS)
-    .or(`display_name.ilike.%${safe}%,item_id.ilike.%${safe}%`)
-    .order('display_name', { ascending: true })
-    .range(offset, offset + limit - 1)
+  const { data, error } = await supabase.rpc('search_items', {
+    q: term,
+    lim: opts?.limit ?? 50,
+    off: opts?.offset ?? 0,
+  })
   if (error) throw error
-  return (data ?? []) as ItemSearchResult[]
+  return ((data ?? []) as Array<{ item_id: string; display_name: string | null; tier: number; enchant: number; category: string }>).map((r) => ({
+    item_id: r.item_id,
+    display_name: r.display_name ?? r.item_id,
+    tier: r.tier,
+    enchant: r.enchant,
+    category: r.category,
+  }))
 }
 
 /** All observations for the item, reduced to newest-per (city, quality, side). */
