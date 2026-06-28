@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { ItemMarket, FlipFilters, PriceQuote } from './flip'
+import { scanRoutes, type FlipRoute, type ItemMarket, type FlipFilters, type PriceQuote } from './flip'
 
 export type FlipSettings = FlipFilters
 
@@ -94,6 +94,8 @@ export async function addGuildPrice(input: {
 interface LatestPriceRow {
   item_id: string
   base_name: string
+  display_name: string | null
+  enchant: number
   category: string
   city: string
   quality: number
@@ -128,7 +130,7 @@ export async function getFlipMarkets(maxStalenessHr: number): Promise<ItemMarket
   const priceRows = await selectAll<LatestPriceRow>((from, to) =>
     supabase
       .from('flip_latest_prices')
-      .select('item_id, base_name, category, city, quality, side, price, observed_at')
+      .select('item_id, base_name, display_name, enchant, category, city, quality, side, price, observed_at')
       .gt('observed_at', cutoff)
       .range(from, to),
   )
@@ -152,6 +154,8 @@ export async function getFlipMarkets(maxStalenessHr: number): Promise<ItemMarket
       m = {
         itemId: r.item_id,
         baseName: r.base_name,
+        displayName: r.display_name,
+        enchant: r.enchant,
         quality: r.quality,
         category: r.category,
         buyQuotes: [],
@@ -166,4 +170,58 @@ export async function getFlipMarkets(maxStalenessHr: number): Promise<ItemMarket
   }
 
   return [...markets.values()]
+}
+
+/** Routes for a single item (price-checker's second entry mode). Reads that item's
+ *  latest prices directly from price_observations (not the watchlist view) so it works
+ *  for any item, then runs the same scan engine with current settings. */
+export async function getRoutesForItem(itemId: string): Promise<FlipRoute[]> {
+  const id = itemId.trim().toUpperCase()
+  const settings = await getFlipSettings()
+
+  const { data: item, error: iErr } = await supabase
+    .from('items')
+    .select('item_id, display_name, enchant, category')
+    .eq('item_id', id)
+    .single()
+  if (iErr) throw iErr
+
+  const cutoff = new Date(Date.now() - settings.maxStalenessHr * 3_600_000).toISOString()
+  const { data: obs, error: oErr } = await supabase
+    .from('price_observations')
+    .select('city, quality, side, price, source, observed_at')
+    .eq('item_id', id)
+    .gt('observed_at', cutoff)
+  if (oErr) throw oErr
+
+  const { data: vol, error: vErr } = await supabase
+    .from('daily_volume')
+    .select('city, avg_sold')
+    .eq('item_id', id)
+  if (vErr) throw vErr
+  const volumeByCity: Record<string, number> = {}
+  for (const v of vol ?? []) volumeByCity[v.city] = v.avg_sold
+
+  const byQuality = new Map<number, ItemMarket>()
+  for (const r of obs ?? []) {
+    let m = byQuality.get(r.quality)
+    if (!m) {
+      m = {
+        itemId: id,
+        baseName: item.display_name ?? id,
+        displayName: item.display_name,
+        enchant: item.enchant,
+        quality: r.quality,
+        category: item.category,
+        buyQuotes: [],
+        sellQuotes: [],
+        volumeByCity,
+      }
+      byQuality.set(r.quality, m)
+    }
+    const q = { city: r.city, price: r.price, observed_at: r.observed_at }
+    if (r.side === 'sell_order') m.buyQuotes.push(q)
+    else m.sellQuotes.push(q)
+  }
+  return scanRoutes([...byQuality.values()], settings, new Date()).routes
 }

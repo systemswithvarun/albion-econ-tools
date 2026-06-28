@@ -10,6 +10,8 @@ export interface PriceQuote {
 export interface ItemMarket {
   itemId: string
   baseName: string
+  displayName: string | null
+  enchant: number
   quality: number
   category: string
   /** side = 'sell_order' rows — the price you PAY to instant-buy. */
@@ -32,6 +34,8 @@ export interface FlipFilters {
 export interface FlipRoute {
   itemId: string
   baseName: string
+  displayName: string | null
+  enchant: number
   quality: number
   buyCity: string
   buyPrice: number
@@ -86,6 +90,8 @@ export function scanRoutes(markets: ItemMarket[], filters: FlipFilters, now: Dat
         routes.push({
           itemId: m.itemId,
           baseName: m.baseName,
+          displayName: m.displayName,
+          enchant: m.enchant,
           quality: m.quality,
           buyCity: buy.city,
           buyPrice: buy.price,

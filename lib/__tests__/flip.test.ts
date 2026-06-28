@@ -19,12 +19,24 @@ function baseFilters(over: Partial<FlipFilters> = {}): FlipFilters {
 const selfCheckMarket: ItemMarket = {
   itemId: 'T4_BAG',
   baseName: 'T4_BAG',
+  displayName: null,
+  enchant: 0,
   quality: 1,
   category: 'bags',
   buyQuotes: [{ city: 'Lymhurst', price: 23000, observed_at: fresh }],
   sellQuotes: [{ city: 'BlackMarket', price: 30000, observed_at: fresh }],
   volumeByCity: { BlackMarket: 100 },
 }
+
+describe('scanRoutes — display fields (C6)', () => {
+  it('route carries displayName, enchant, quality', () => {
+    const m: ItemMarket = { ...selfCheckMarket, displayName: "Adept's Bag", enchant: 1 }
+    const { routes } = scanRoutes([m], baseFilters(), NOW)
+    expect(routes[0].displayName).toBe("Adept's Bag")
+    expect(routes[0].enchant).toBe(1)
+    expect(routes[0].quality).toBe(1)
+  })
+})
 
 describe('scanRoutes — self-check', () => {
   it('reproduces 4,600 net/unit for the documented route', () => {
@@ -83,13 +95,13 @@ describe('scanRoutes — filters', () => {
 
 describe('scanRoutes — ranking + basket', () => {
   const lowVolHighMargin: ItemMarket = {
-    itemId: 'A', baseName: 'A', quality: 1, category: 'weapons',
+    itemId: 'A', baseName: 'A', displayName: null, enchant: 0, quality: 1, category: 'weapons',
     buyQuotes: [{ city: 'Lymhurst', price: 10000, observed_at: fresh }],
     sellQuotes: [{ city: 'BlackMarket', price: 20000, observed_at: fresh }],
     volumeByCity: { BlackMarket: 1 },
   }
   const highVolLowMargin: ItemMarket = {
-    itemId: 'B', baseName: 'B', quality: 1, category: 'weapons',
+    itemId: 'B', baseName: 'B', displayName: null, enchant: 0, quality: 1, category: 'weapons',
     buyQuotes: [{ city: 'Martlock', price: 10000, observed_at: fresh }],
     sellQuotes: [{ city: 'BlackMarket', price: 11500, observed_at: fresh }],
     volumeByCity: { BlackMarket: 500 },

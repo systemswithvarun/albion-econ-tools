@@ -68,6 +68,8 @@ create or replace view flip_latest_prices as
 select distinct on (po.item_id, po.city, po.quality, po.side)
   po.item_id,
   i.base_name,
+  i.display_name,
+  i.enchant,
   i.category,
   po.city,
   po.quality,
