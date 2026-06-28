@@ -4,10 +4,9 @@ import { FiltersForm } from './_components/filters-form'
 import { FlipControls } from './_components/flip-controls'
 import { ManualEntryForm } from './_components/manual-entry-form'
 import { ResultsTable } from './_components/results-table'
+import { CITIES } from '@/lib/cities'
 
 export const dynamic = 'force-dynamic'
-
-const CITIES = ['Thetford', 'FortSterling', 'Lymhurst', 'Bridgewatch', 'Martlock', 'Caerleon', 'BlackMarket']
 
 export default async function FlipPage() {
   let settings
@@ -51,7 +50,7 @@ export default async function FlipPage() {
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
         <aside className="space-y-6">
           <FiltersForm settings={settings} />
-          <ManualEntryForm cities={CITIES} />
+          <ManualEntryForm cities={[...CITIES]} />
         </aside>
         <ResultsTable routes={scan.routes} />
       </div>

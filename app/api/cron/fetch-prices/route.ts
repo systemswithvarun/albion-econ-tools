@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getCurrentPrices, getHistory } from '@/lib/aodp'
 import { getWatchlistItems, upsertPriceObservations, upsertDailyVolume } from '@/lib/items'
-
-const CITIES = ['Thetford', 'FortSterling', 'Lymhurst', 'Bridgewatch', 'Martlock', 'Caerleon', 'BlackMarket']
+import { CITIES } from '@/lib/cities'
 
 export async function GET() {
   const started = Date.now()
@@ -20,10 +19,10 @@ export async function GET() {
 
     const [withQualRows, noQualRows] = await Promise.all([
       qualityItems.length > 0
-        ? getCurrentPrices(qualityItems, CITIES, [1, 2, 3, 4, 5])
+        ? getCurrentPrices(qualityItems, [...CITIES], [1, 2, 3, 4, 5])
         : Promise.resolve([]),
       noQualityItems.length > 0
-        ? getCurrentPrices(noQualityItems, CITIES, [1])
+        ? getCurrentPrices(noQualityItems, [...CITIES], [1])
         : Promise.resolve([]),
     ])
 
