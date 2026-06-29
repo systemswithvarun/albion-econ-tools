@@ -6,14 +6,12 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import type { FlipRoute } from '@/lib/flip'
+import { formatItemName } from '@/lib/display'
 
-type SortKey = keyof Pick<
-  FlipRoute,
-  'baseName' | 'netPerUnit' | 'marginPct' | 'dailyVolume' | 'routeDailyProfit' | 'unitsAffordable'
->
+type SortKey = 'item' | 'netPerUnit' | 'marginPct' | 'dailyVolume' | 'routeDailyProfit' | 'unitsAffordable'
 
 const COLUMNS: { key: SortKey; label: string; numeric: boolean }[] = [
-  { key: 'baseName', label: 'Item', numeric: false },
+  { key: 'item', label: 'Item', numeric: false },
   { key: 'netPerUnit', label: 'Net/unit', numeric: true },
   { key: 'marginPct', label: 'Margin %', numeric: true },
   { key: 'dailyVolume', label: 'Daily vol', numeric: true },
@@ -25,6 +23,12 @@ function fmt(n: number) {
   return Math.round(n).toLocaleString()
 }
 
+/** Single rendering path for item identity: display_name (or id fallback) + enchant + quality.
+ *  Never surface item_id/base_name raw — display_name lives only in items, joined into the route. */
+function routeName(r: FlipRoute): string {
+  return formatItemName({ display_name: r.displayName, item_id: r.itemId, enchant: r.enchant }, r.quality)
+}
+
 export function ResultsTable({ routes }: { routes: FlipRoute[] }) {
   const [sortKey, setSortKey] = useState<SortKey>('routeDailyProfit')
   const [asc, setAsc] = useState(false)
@@ -32,11 +36,9 @@ export function ResultsTable({ routes }: { routes: FlipRoute[] }) {
   const sorted = useMemo(() => {
     const copy = [...routes]
     copy.sort((a, b) => {
-      const av = a[sortKey]
-      const bv = b[sortKey]
-      const cmp = typeof av === 'number' && typeof bv === 'number'
-        ? av - bv
-        : String(av).localeCompare(String(bv))
+      const cmp = sortKey === 'item'
+        ? routeName(a).localeCompare(routeName(b))
+        : (a[sortKey] as number) - (b[sortKey] as number)
       return asc ? cmp : -cmp
     })
     return copy
@@ -96,7 +98,7 @@ export function ResultsTable({ routes }: { routes: FlipRoute[] }) {
               className={r.inBasket ? 'bg-primary/5 hover:bg-primary/10' : undefined}
             >
               <TableCell className="font-medium">
-                {r.baseName}{r.quality > 1 ? ` Q${r.quality}` : ''}
+                {routeName(r)}
                 {r.inBasket && <Badge variant="secondary" className="ml-2 align-middle">basket</Badge>}
               </TableCell>
               <TableCell className="text-right tabular-nums font-medium text-profit">{fmt(r.netPerUnit)}</TableCell>
