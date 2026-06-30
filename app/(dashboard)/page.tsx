@@ -43,9 +43,15 @@ export default async function HomePage() {
 
   const modules = [
     {
+      href: '/prices',
+      title: 'Price Checker',
+      description: 'Search any item by name and inspect live prices across all cities.',
+      status: 'active' as const,
+    },
+    {
       href: '/flip',
-      title: 'Market Flipping',
-      description: 'Find buy-low / sell-high opportunities across cities.',
+      title: 'Black Market Flipper',
+      description: 'Find buy-low / sell-high arbitrage opportunities between royal cities and the Black Market.',
       status: 'active' as const,
     },
     {
@@ -63,7 +69,7 @@ export default async function HomePage() {
   ]
 
   return (
-    <main className="container mx-auto p-8 max-w-4xl">
+    <main className="container mx-auto p-8 max-w-5xl">
       <h1 className="text-3xl font-bold mb-2">Albion Econ</h1>
       <p className="text-muted-foreground mb-8">Guild economy tools — Americas West</p>
 
@@ -81,7 +87,7 @@ export default async function HomePage() {
       </div>
 
       {/* Module cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {modules.map((m) => (
           <Link key={m.href} href={m.href} className="block">
             <Card className="h-full hover:border-primary transition-colors">
