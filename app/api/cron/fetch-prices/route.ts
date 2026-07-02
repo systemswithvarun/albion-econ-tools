@@ -3,6 +3,8 @@ import { getCurrentPrices, getHistory } from '@/lib/aodp'
 import { getWatchlistItems, upsertPriceObservations, upsertDailyVolume } from '@/lib/items'
 import { CITIES } from '@/lib/cities'
 
+export const maxDuration = 300;
+
 export async function GET() {
   const started = Date.now()
   try {

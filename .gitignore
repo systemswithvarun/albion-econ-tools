@@ -42,3 +42,6 @@ next-env.d.ts
 
 # seed data dumps (large ao-bin-dumps JSON, not committed)
 data/*.json
+
+graphify-out/
+scratch/
