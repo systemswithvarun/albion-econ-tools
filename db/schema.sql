@@ -48,6 +48,7 @@ create table if not exists settings (
   min_margin_pct   numeric not null default 5,
   max_staleness_hr int     not null default 6,
   min_daily_volume int     not null default 0,
+  last_price_fetch_at timestamptz,
   constraint single_row check (id = 1)
 );
 
