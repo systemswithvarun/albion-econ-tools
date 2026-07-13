@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { scanRoutes, computeBmGap, type ItemMarket, type FlipFilters } from '../flip'
+import { scanRoutes, computeItemRoutes, computeBmGap, type ItemMarket, type FlipFilters } from '../flip'
 
 const NOW = new Date('2026-06-27T12:00:00Z')
 const fresh = '2026-06-27T11:30:00Z' // 0.5h old
@@ -35,6 +35,46 @@ describe('scanRoutes — display fields (C6)', () => {
     expect(routes[0].displayName).toBe("Adept's Bag")
     expect(routes[0].enchant).toBe(1)
     expect(routes[0].quality).toBe(1)
+  })
+})
+
+describe('computeItemRoutes — gate-free economics (E1.5)', () => {
+  it('matches scanRoutes numbers exactly for a passing item (no drift)', () => {
+    const [raw] = computeItemRoutes(selfCheckMarket, { premium: false }, NOW)
+    const { routes } = scanRoutes([selfCheckMarket], baseFilters(), NOW)
+    const scanned = routes.find((r) => r.buyCity === raw.buyCity && r.sellCity === raw.sellCity)!
+    // The displayed economics (fee math) are identical — same function underneath.
+    expect(raw.netPerUnit).toBe(scanned.netPerUnit)
+    expect(raw.marginPct).toBe(scanned.marginPct)
+    expect(raw.dailyVolume).toBe(scanned.dailyVolume)
+    expect(raw.bmFlagged).toBe(scanned.bmFlagged)
+    expect(raw.bmGap).toEqual(scanned.bmGap)
+  })
+
+  it('still returns a route for an item that FAILS every flip filter', () => {
+    // Thin margin, zero volume, and stale — scanRoutes drops it entirely.
+    const marginal: ItemMarket = {
+      ...selfCheckMarket,
+      buyQuotes: [{ city: 'Lymhurst', price: 29000, observed_at: '2026-06-20T12:00:00Z' }], // 7d stale
+      sellQuotes: [{ city: 'BlackMarket', price: 30000, observed_at: '2026-06-20T12:00:00Z' }],
+      volumeByCity: {}, // zero volume
+    }
+    const strict = baseFilters({ minMarginPct: 5, minDailyVolume: 10, maxStalenessHr: 6 })
+    expect(scanRoutes([marginal], strict, NOW).routes).toHaveLength(0)
+
+    // The watchlist flip-view still shows it, with its real (weak) numbers.
+    const [raw] = computeItemRoutes(marginal, { premium: false }, NOW)
+    expect(raw).toBeDefined()
+    expect(raw.dailyVolume).toBe(0)
+    expect(raw.marginPct).toBeLessThan(5)
+    expect(raw.buyAgeHr).toBeGreaterThan(6) // stale, but not filtered out here
+  })
+
+  it('leaves cash-dependent fields at 0 (sizing is a filter concern)', () => {
+    const [raw] = computeItemRoutes(selfCheckMarket, { premium: false }, NOW)
+    expect(raw.unitsAffordable).toBe(0)
+    expect(raw.realizable).toBe(0)
+    expect(raw.routeDailyProfit).toBe(0)
   })
 })
 

@@ -80,61 +80,86 @@ function ageHr(observed_at: string, now: Date): number {
   return (now.getTime() - new Date(observed_at).getTime()) / 3_600_000
 }
 
+export interface ItemFlipParams {
+  /** premium tax rate (4% vs 8%) applied by instantSellNet. */
+  premium: boolean
+}
+
+/**
+ * Pure per-item flip economics — every cross-city buy→sell route for ONE item, with the
+ * full computed fields (net/unit, margin %, daily volume, buy/sell age, BM gap + flag)
+ * and NO filter gates (no margin/volume/staleness screen, no cash sizing).
+ *
+ * Single source of the fee math for BOTH callers: scanRoutes (/flip) filters and sizes
+ * these; the favorites flip-view (SPEC E2) renders them unfiltered. Cash-dependent fields
+ * (unitsAffordable/realizable/routeDailyProfit) are left 0 here — they need disposableCash,
+ * which is a filter concern, so scanRoutes fills them after the gates.
+ */
+export function computeItemRoutes(m: ItemMarket, params: ItemFlipParams, now: Date): FlipRoute[] {
+  const { premium } = params
+  const routes: FlipRoute[] = []
+
+  const royalBuys = m.buyQuotes.filter((q) => (ROYAL_CITIES as readonly string[]).includes(q.city))
+  const lowestAcquisition = royalBuys.length > 0 ? Math.min(...royalBuys.map((q) => q.price)) : 0
+  const bmSell = m.sellQuotes.find((q) => q.city === 'BlackMarket')
+  const bmBuyOrder = bmSell?.price ?? 0
+  const bmGap = lowestAcquisition > 0 && bmBuyOrder > 0 ? computeBmGap(lowestAcquisition, bmBuyOrder) : null
+  const bmFlagged = bmGap?.flagged ?? false
+
+  for (const buy of m.buyQuotes) {
+    for (const sell of m.sellQuotes) {
+      if (buy.city === sell.city) continue // a flip moves goods between markets
+
+      const buyCost = instantBuyCost(buy.price)
+      if (buyCost <= 0) continue
+      const netPerUnit = instantSellNet(sell.price, premium) - buyCost
+      const marginPct = (netPerUnit / buyCost) * 100
+      const dailyVolume = m.volumeByCity[sell.city] ?? 0
+
+      routes.push({
+        itemId: m.itemId,
+        baseName: m.baseName,
+        displayName: m.displayName,
+        enchant: m.enchant,
+        quality: m.quality,
+        buyCity: buy.city,
+        buyPrice: buy.price,
+        sellCity: sell.city,
+        sellPrice: sell.price,
+        netPerUnit,
+        marginPct,
+        dailyVolume,
+        buyAgeHr: ageHr(buy.observed_at, now),
+        sellAgeHr: ageHr(sell.observed_at, now),
+        unitsAffordable: 0,
+        realizable: 0,
+        routeDailyProfit: 0,
+        inBasket: false,
+        bmFlagged,
+        bmGap,
+      })
+    }
+  }
+  return routes
+}
+
 export function scanRoutes(markets: ItemMarket[], filters: FlipFilters, now: Date): ScanResult {
   const { disposableCash, minMarginPct, maxStalenessHr, minDailyVolume, premium, dailyTarget } = filters
   const routes: FlipRoute[] = []
 
   for (const m of markets) {
-    const royalBuys = m.buyQuotes.filter((q) => (ROYAL_CITIES as readonly string[]).includes(q.city))
-    const lowestAcquisition = royalBuys.length > 0 ? Math.min(...royalBuys.map((q) => q.price)) : 0
-    const bmSell = m.sellQuotes.find((q) => q.city === 'BlackMarket')
-    const bmBuyOrder = bmSell?.price ?? 0
-    const bmGap = lowestAcquisition > 0 && bmBuyOrder > 0 ? computeBmGap(lowestAcquisition, bmBuyOrder) : null
-    const bmFlagged = bmGap?.flagged ?? false
+    for (const r of computeItemRoutes(m, { premium }, now)) {
+      // Gates the flip-view bypasses: staleness, margin, volume.
+      if (r.buyAgeHr > maxStalenessHr || r.sellAgeHr > maxStalenessHr) continue
+      if (r.marginPct < minMarginPct) continue
+      if (r.dailyVolume < minDailyVolume) continue
 
-    const freshBuys = m.buyQuotes.filter((q) => ageHr(q.observed_at, now) <= maxStalenessHr)
-    const freshSells = m.sellQuotes.filter((q) => ageHr(q.observed_at, now) <= maxStalenessHr)
-
-    for (const buy of freshBuys) {
-      for (const sell of freshSells) {
-        if (buy.city === sell.city) continue // a flip moves goods between markets
-
-        const buyCost = instantBuyCost(buy.price)
-        const netPerUnit = instantSellNet(sell.price, premium) - buyCost
-        if (buyCost <= 0) continue
-        const marginPct = (netPerUnit / buyCost) * 100
-        const dailyVolume = m.volumeByCity[sell.city] ?? 0
-
-        if (marginPct < minMarginPct) continue
-        if (dailyVolume < minDailyVolume) continue
-
-        const unitsAffordable = Math.floor(disposableCash / buyCost)
-        const realizable = Math.min(unitsAffordable, dailyVolume)
-        const routeDailyProfit = netPerUnit * realizable
-
-        routes.push({
-          itemId: m.itemId,
-          baseName: m.baseName,
-          displayName: m.displayName,
-          enchant: m.enchant,
-          quality: m.quality,
-          buyCity: buy.city,
-          buyPrice: buy.price,
-          sellCity: sell.city,
-          sellPrice: sell.price,
-          netPerUnit,
-          marginPct,
-          dailyVolume,
-          buyAgeHr: ageHr(buy.observed_at, now),
-          sellAgeHr: ageHr(sell.observed_at, now),
-          unitsAffordable,
-          realizable,
-          routeDailyProfit,
-          inBasket: false,
-          bmFlagged,
-          bmGap,
-        })
-      }
+      // Cash sizing — a filter concern, so it lives here, not in computeItemRoutes.
+      const buyCost = instantBuyCost(r.buyPrice)
+      r.unitsAffordable = Math.floor(disposableCash / buyCost)
+      r.realizable = Math.min(r.unitsAffordable, r.dailyVolume)
+      r.routeDailyProfit = r.netPerUnit * r.realizable
+      routes.push(r)
     }
   }
 
