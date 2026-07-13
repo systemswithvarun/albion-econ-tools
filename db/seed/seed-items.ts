@@ -33,6 +33,7 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import * as dotenv from 'dotenv'
+import { toBaseKey } from './name-map'
 
 dotenv.config({ path: '.env.local' })
 
@@ -66,6 +67,7 @@ interface RawItem {
 interface ItemRow {
   item_id: string
   base_name: string
+  base_key: string
   tier: number
   enchant: number
   category: string
@@ -169,9 +171,11 @@ function parseItems(json: any): ItemRow[] {
       )
 
       // --- enchant 0 (base) row ---
+      const baseId = makeItemId(uniquename, 0)
       pushRow(rows, seen, {
-        item_id: makeItemId(uniquename, 0),
+        item_id: baseId,
         base_name: baseName,
+        base_key: toBaseKey(baseId, 0),
         tier,
         enchant: 0,
         category,
@@ -189,9 +193,11 @@ function parseItems(json: any): ItemRow[] {
           baseArtifact ||
           craftResourceNames(ench.craftingrequirements).some((n) => n.includes('ARTEFACT'))
 
+        const enchId = makeItemId(uniquename, lvl)
         pushRow(rows, seen, {
-          item_id: makeItemId(uniquename, lvl),
+          item_id: enchId,
           base_name: baseName,
+          base_key: toBaseKey(enchId, lvl),
           tier,
           enchant: lvl,
           category,

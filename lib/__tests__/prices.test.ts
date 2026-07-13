@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll, vi } from 'vitest'
 import { reduceLivePrices, isFresh, type RawObservation } from '../prices'
-import { toItemId, buildNameMap } from '../../db/seed/name-map'
+import { toItemId, toBaseKey, buildNameMap } from '../../db/seed/name-map'
 
 describe('name-map', () => {
   it('transforms enchant @N to _N', () => {
@@ -16,6 +16,29 @@ describe('name-map', () => {
     expect(m.get('T4_BAG')).toBe("Adept's Bag")
     expect(m.get('T4_2H_CLAYMORE_3')).toBe("Adept's Claymore")
     expect(m.has('X')).toBe(false)
+  })
+})
+
+describe('toBaseKey (family sort key)', () => {
+  it('strips leading tier so every tier of a family shares one key', () => {
+    expect(toBaseKey('T4_2H_CLAYMORE', 0)).toBe('2H_CLAYMORE')
+    expect(toBaseKey('T8_2H_CLAYMORE', 0)).toBe('2H_CLAYMORE')
+    // T2 and T3 (the acceptance edge) collapse to the same family, not just T4+.
+    expect(toBaseKey('T2_BAG', 0)).toBe('BAG')
+    expect(toBaseKey('T3_BAG', 0)).toBe('BAG')
+    expect(toBaseKey('T8_BAG', 0)).toBe('BAG')
+  })
+  it('strips the trailing enchant suffix so enchants join their family', () => {
+    expect(toBaseKey('T4_2H_CLAYMORE_1', 1)).toBe('2H_CLAYMORE')
+    expect(toBaseKey('T4_2H_CLAYMORE_3', 3)).toBe('2H_CLAYMORE')
+  })
+  it('keeps a name that legitimately ends in a digit (enchant 0 -> no strip)', () => {
+    expect(toBaseKey('T4_ARMOR_PLATE_SET1', 0)).toBe('ARMOR_PLATE_SET1')
+    // its enchant-1 variant strips only the enchant suffix, rejoining the base
+    expect(toBaseKey('T4_ARMOR_PLATE_SET1_1', 1)).toBe('ARMOR_PLATE_SET1')
+  })
+  it('leaves non-tier ids untouched', () => {
+    expect(toBaseKey('UNIQUE_HIDEOUT', 0)).toBe('UNIQUE_HIDEOUT')
   })
 })
 
@@ -117,6 +140,58 @@ dbDescribe('searchItems (integration)', () => {
   it('returns [] for gibberish, not an error', async () => {
     const { searchItems } = await import('../prices')
     expect(await searchItems('zzzqqxnope123')).toEqual([])
+  })
+
+  // Asserts the RENDERED order (the array the UI maps in place), not the query text.
+  // family = toBaseKey(item_id, enchant), recomputed here from the returned rows.
+  it('groups each family contiguously, tier-ascending within (knight)', async () => {
+    const { searchItems } = await import('../prices')
+    const rows = await searchItems('knight', { limit: 200 })
+    expect(rows.length).toBeGreaterThan(0)
+
+    const fam = (r: { item_id: string; enchant: number }) => toBaseKey(r.item_id, r.enchant)
+
+    // 1. No family reappears after it ends — families are contiguous blocks.
+    const seen = new Set<string>()
+    let prevFam: string | null = null
+    for (const r of rows) {
+      const f = fam(r)
+      if (f !== prevFam) {
+        expect(seen.has(f)).toBe(false) // would mean the family was split and resumed
+        seen.add(f)
+        prevFam = f
+      }
+    }
+
+    // 2. Within a family, tier never goes out of sequence (asc), enchant asc on tier ties.
+    prevFam = null
+    let prevTier = -Infinity
+    let prevEnch = -Infinity
+    for (const r of rows) {
+      const f = fam(r)
+      if (f !== prevFam) {
+        prevFam = f
+        prevTier = r.tier
+        prevEnch = r.enchant
+        continue
+      }
+      expect(r.tier).toBeGreaterThanOrEqual(prevTier)
+      if (r.tier === prevTier) expect(r.enchant).toBeGreaterThanOrEqual(prevEnch)
+      prevTier = r.tier
+      prevEnch = r.enchant
+    }
+  })
+
+  // Acceptance edge: a family spanning T2–T8 must slot the low tiers first, not just T4+.
+  it('orders a T2–T8 family (bag) with low tiers first', async () => {
+    const { searchItems } = await import('../prices')
+    const rows = await searchItems('bag', { limit: 200 })
+    const bag = rows.filter((r) => toBaseKey(r.item_id, r.enchant) === 'BAG' && r.enchant === 0)
+    const tiers = bag.map((r) => r.tier)
+    expect(tiers).toContain(2)
+    expect(tiers).toContain(3)
+    // the BAG rows appear in ascending tier order
+    expect([...tiers]).toEqual([...tiers].sort((a, b) => a - b))
   })
 })
 
