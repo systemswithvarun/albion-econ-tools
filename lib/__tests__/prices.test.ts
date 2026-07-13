@@ -249,3 +249,92 @@ dbDescribe('favorites (integration)', () => {
     expect(afterA.some((r) => r.item_id === ID)).toBe(false)
   })
 })
+
+// SPEC E1 sort model. Asserts the RENDERED order of the returned rows (and across a
+// fresh re-read = "reload"), not that a column exists. Uses two families that exist in
+// every seed — bags (base_key BAG) and capes (base_key CAPE), BAG < CAPE alphabetically.
+dbDescribe('favorites sort model (integration)', () => {
+  const A = 'test-sort-a'
+  const B = 'test-sort-b'
+  // Two tiers of one family + one of another → auto order must be BAG t-asc, then CAPE.
+  const BAG_LO = 'T4_BAG'
+  const BAG_HI = 'T8_BAG'
+  const CAPE = 'T4_CAPE'
+  const ALL = [BAG_LO, BAG_HI, CAPE]
+
+  async function reset(ids: string[], client: string) {
+    const { removeFavorite } = await import('../prices')
+    for (const id of ids) await removeFavorite(client, id)
+  }
+  afterAll(async () => {
+    await reset(ALL, A)
+    await reset(ALL, B)
+  })
+
+  it('auto order: family (base_key) asc then tier asc when all sort_order null', async () => {
+    const { addFavorite, listFavorites } = await import('../prices')
+    await reset(ALL, A)
+    // Insert out of order to prove the read sorts, not insertion order.
+    await addFavorite(A, CAPE)
+    await addFavorite(A, BAG_HI)
+    await addFavorite(A, BAG_LO)
+
+    const list = await listFavorites(A)
+    expect(list.map((r) => r.item_id)).toEqual([BAG_LO, BAG_HI, CAPE])
+    expect(list.every((r) => r.sort_order === null)).toBe(true)
+  })
+
+  it('drag persist survives reload: pinned item stays first, rest auto below', async () => {
+    const { addFavorite, listFavorites, setFavoriteSortOrder } = await import('../prices')
+    await reset(ALL, A)
+    await addFavorite(A, BAG_LO)
+    await addFavorite(A, BAG_HI)
+    await addFavorite(A, CAPE)
+
+    // Pin the last-in-auto (CAPE) to the top.
+    await setFavoriteSortOrder(A, CAPE, 100)
+
+    // Fresh read = reload: pinned first, remaining two still auto in family+tier order.
+    const reloaded = await listFavorites(A)
+    expect(reloaded.map((r) => r.item_id)).toEqual([CAPE, BAG_LO, BAG_HI])
+    expect(reloaded[0].sort_order).toBe(100)
+    expect(reloaded[1].sort_order).toBeNull()
+  })
+
+  it('re-auto clears every pin back to family + tier order', async () => {
+    const { addFavorite, listFavorites, setFavoriteSortOrder, reautoFavorites } = await import('../prices')
+    await reset(ALL, A)
+    await addFavorite(A, BAG_LO)
+    await addFavorite(A, BAG_HI)
+    await addFavorite(A, CAPE)
+    await setFavoriteSortOrder(A, CAPE, 100)
+
+    await reautoFavorites(A)
+    const list = await listFavorites(A)
+    expect(list.map((r) => r.item_id)).toEqual([BAG_LO, BAG_HI, CAPE])
+    expect(list.every((r) => r.sort_order === null)).toBe(true)
+  })
+
+  it('two clients keep independent orders through the sort layer', async () => {
+    const { addFavorite, listFavorites, setFavoriteSortOrder } = await import('../prices')
+    await reset(ALL, A)
+    await reset(ALL, B)
+    await addFavorite(A, BAG_LO)
+    await addFavorite(A, CAPE)
+    await addFavorite(B, BAG_LO)
+    await addFavorite(B, CAPE)
+
+    // A pins CAPE to top; B untouched.
+    await setFavoriteSortOrder(A, CAPE, 100)
+
+    const listA = await listFavorites(A)
+    const listB = await listFavorites(B)
+    expect(listA.map((r) => r.item_id)).toEqual([CAPE, BAG_LO])
+    expect(listB.map((r) => r.item_id)).toEqual([BAG_LO, CAPE]) // still auto
+  })
+
+  it('setFavoriteSortOrder fails loud when the item is not this client-s favorite', async () => {
+    const { setFavoriteSortOrder } = await import('../prices')
+    await expect(setFavoriteSortOrder(A, 'T4_NONEXISTENT_NOPE', 100)).rejects.toThrow()
+  })
+})

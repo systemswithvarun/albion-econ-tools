@@ -94,12 +94,16 @@ order by po.item_id, po.city, po.quality, po.side, po.observed_at desc, po.sourc
 create index if not exists idx_items_item_id_lower on items (lower(item_id));
 
 -- Favorites: one set per client_id (cookie-based anonymous identity).
+-- sort_order: null = auto bucket (family + tier order), non-null = pinned position.
 create table if not exists favorites (
   client_id  text not null,
   item_id    text not null references items(item_id),
   created_at timestamptz not null default now(),
+  sort_order int,
   primary key (client_id, item_id)
 );
+
+create index if not exists idx_favorites_client_sort on favorites (client_id, sort_order);
 
 create extension if not exists pg_trgm;
 
@@ -123,6 +127,32 @@ as $$
      or similarity(i.display_name, q) > 0.2
   order by
     max(similarity(i.display_name, q)) over (partition by i.base_key) desc nulls last,
+    i.base_key asc,
+    i.tier asc,
+    i.enchant asc
+  limit lim offset off
+$$;
+
+-- Scoped, ordered favorites read (see migration 011). Pinned first (sort_order asc),
+-- then auto (family + tier + enchant). Paginated.
+create or replace function list_favorites(cid text, lim int default 100, off int default 0)
+returns table (
+  item_id      text,
+  display_name text,
+  tier         int,
+  enchant      int,
+  category     text,
+  sort_order   int
+)
+language sql stable
+as $$
+  select f.item_id, i.display_name, i.tier, i.enchant, i.category, f.sort_order
+  from favorites f
+  join items i on i.item_id = f.item_id
+  where f.client_id = cid
+  order by
+    (f.sort_order is null),
+    f.sort_order asc,
     i.base_key asc,
     i.tier asc,
     i.enchant asc

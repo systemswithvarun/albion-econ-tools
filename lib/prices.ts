@@ -13,6 +13,10 @@ export type ItemSearchResult = {
   category: string
 }
 
+/** A favorite row: the item's display fields plus its sort position.
+ *  sort_order null = auto bucket; non-null = pinned. */
+export type FavoriteItem = ItemSearchResult & { sort_order: number | null }
+
 export type LivePrice = {
   city: string
   quality: number
@@ -23,8 +27,6 @@ export type LivePrice = {
 }
 
 export type RawObservation = LivePrice
-
-const SELECT_COLS = 'item_id, display_name, tier, enchant, category'
 
 /** Pure canonical read: newest per (city, quality, side); guild wins exact-time tie. */
 export function reduceLivePrices(rows: RawObservation[]): LivePrice[] {
@@ -128,24 +130,91 @@ export async function getLivePricesForItem(itemId: string): Promise<LivePrice[]>
   return reduceLivePrices(rows)
 }
 
-/** Favorites for one client, joined to items for names; paginated.
- *  clientId null (first paint before the cookie round-trips) → empty list, no query. */
+/**
+ * Favorites for one client in sorted order (SPEC E1): pinned items (sort_order not
+ * null) first by sort_order asc, then auto items by family (base_key) + tier + enchant.
+ * Ordering lives in the list_favorites RPC — single source, joins items for the sort.
+ * clientId null (first paint before the cookie round-trips) → empty list, no query.
+ * Paginated across pages (PostgREST 1000-row cap) even though no watchlist reaches it.
+ */
 export async function listFavorites(
   clientId: string | null,
   opts?: { limit?: number; offset?: number },
-): Promise<ItemSearchResult[]> {
+): Promise<FavoriteItem[]> {
   if (!clientId) return []
-  const limit = opts?.limit ?? 100
-  const offset = opts?.offset ?? 0
+  type Row = { item_id: string; display_name: string | null; tier: number; enchant: number; category: string; sort_order: number | null }
+  const map = (rows: Row[]): FavoriteItem[] =>
+    rows.map((r) => ({
+      item_id: r.item_id,
+      display_name: r.display_name ?? r.item_id,
+      tier: r.tier,
+      enchant: r.enchant,
+      category: r.category,
+      sort_order: r.sort_order,
+    }))
+
+  // Explicit paging requested → single RPC page.
+  if (opts) {
+    const { data, error } = await supabase.rpc('list_favorites', {
+      cid: clientId,
+      lim: opts.limit ?? 100,
+      off: opts.offset ?? 0,
+    })
+    if (error) throw error
+    return map((data ?? []) as Row[])
+  }
+
+  // Default → walk all pages so a caller that wants "the whole list" is never silently
+  // truncated at the RPC's default limit.
+  const PAGE = 1000
+  const out: FavoriteItem[] = []
+  for (let off = 0; ; off += PAGE) {
+    const { data, error } = await supabase.rpc('list_favorites', { cid: clientId, lim: PAGE, off })
+    if (error) throw error
+    const rows = (data ?? []) as Row[]
+    out.push(...map(rows))
+    if (rows.length < PAGE) break
+  }
+  return out
+}
+
+/** Drag persist (SPEC E1): pin one favorite to a manual position, or unpin it (null).
+ *  Gap-based convention — pinned rows are spaced by 100; the caller writes a midpoint
+ *  to slot between neighbours, and only calls renumberFavorites when a gap is exhausted.
+ *  Fails loud if the item isn't one of this client's favorites (guard discipline). */
+export async function setFavoriteSortOrder(
+  clientId: string,
+  itemId: string,
+  sortOrder: number | null,
+): Promise<void> {
+  const id = itemId.trim().toUpperCase()
   const { data, error } = await supabase
     .from('favorites')
-    .select(`item_id, created_at, items!inner(${SELECT_COLS})`)
+    .update({ sort_order: sortOrder })
     .eq('client_id', clientId)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1)
+    .eq('item_id', id)
+    .select('item_id')
   if (error) throw error
-  type Row = { items: ItemSearchResult | ItemSearchResult[] }
-  return ((data ?? []) as unknown as Row[]).map((r) => (Array.isArray(r.items) ? r.items[0] : r.items))
+  if (!data || data.length === 0) throw new Error(`setFavoriteSortOrder: no favorite ${id} for this client`)
+}
+
+/** Re-auto (SPEC E1): clear every pin for the client → whole list returns to auto
+ *  family + tier order. Zero rows is a legitimate empty list, not a failure. */
+export async function reautoFavorites(clientId: string): Promise<void> {
+  const { error } = await supabase
+    .from('favorites')
+    .update({ sort_order: null })
+    .eq('client_id', clientId)
+  if (error) throw error
+}
+
+/** Renumber pins to a clean step-100 sequence in the given order — the escape hatch
+ *  for when gap-based inserts exhaust the integer space between two neighbours. Every
+ *  id must be one of the client's favorites, or it fails loud. */
+export async function renumberFavorites(clientId: string, orderedItemIds: string[]): Promise<void> {
+  for (let i = 0; i < orderedItemIds.length; i++) {
+    await setFavoriteSortOrder(clientId, orderedItemIds[i], (i + 1) * 100)
+  }
 }
 
 /** Add favorite for a client (uppercases id, like guild entry). Idempotent on duplicate. */
