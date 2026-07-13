@@ -5,7 +5,7 @@ export type FlipSettings = FlipFilters
 
 const SETTINGS_COLS = 'premium, disposable_cash, daily_target, min_margin_pct, max_staleness_hr, min_daily_volume'
 
-const DEFAULT_FLIP_SETTINGS: FlipSettings = {
+export const DEFAULT_FLIP_SETTINGS: FlipSettings = {
   premium: false,
   disposableCash: 0,
   dailyTarget: 0,

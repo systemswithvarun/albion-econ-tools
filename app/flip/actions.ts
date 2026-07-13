@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { updateFlipSettings, addGuildPrice, rebuildWatchlist } from '@/lib/flip-data'
+import { updateFlipSettings, addGuildPrice, rebuildWatchlist, DEFAULT_FLIP_SETTINGS } from '@/lib/flip-data'
 import { getClientId } from '@/lib/client-id'
 
 export async function saveFiltersAction(formData: FormData): Promise<void> {
@@ -18,6 +18,14 @@ export async function saveFiltersAction(formData: FormData): Promise<void> {
     maxStalenessHr: num('maxStalenessHr'),
     minDailyVolume: num('minDailyVolume'),
   })
+  revalidatePath('/flip')
+}
+
+export async function resetFiltersAction(): Promise<void> {
+  const clientId = await getClientId()
+  if (!clientId) throw new Error('No client id — reload to get a session cookie')
+  // Write all five filters + premium back to defaults for this client's row.
+  await updateFlipSettings(clientId, { ...DEFAULT_FLIP_SETTINGS })
   revalidatePath('/flip')
 }
 

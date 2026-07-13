@@ -12,14 +12,16 @@ export function SubmitButton({
   children,
   pendingText,
   className,
+  variant,
 }: {
   children: React.ReactNode
   pendingText: string
   className?: string
+  variant?: React.ComponentProps<typeof Button>['variant']
 }) {
   const { pending } = useFormStatus()
   return (
-    <Button type="submit" disabled={pending} aria-busy={pending} className={className}>
+    <Button type="submit" variant={variant} disabled={pending} aria-busy={pending} className={className}>
       {pending ? pendingText : children}
     </Button>
   )

@@ -3,7 +3,7 @@
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { saveFiltersAction } from '../actions'
+import { saveFiltersAction, resetFiltersAction } from '../actions'
 import { SubmitButton } from './submit-button'
 import type { FlipSettings } from '@/lib/flip-data'
 
@@ -33,6 +33,13 @@ export function FiltersForm({ settings }: { settings: FlipSettings }) {
             </div>
           ))}
           <SubmitButton className="w-full" pendingText="Applying…">Apply filters</SubmitButton>
+        </form>
+        {/* Separate form: reset writes all five filters + premium back to defaults for
+            this client's settings row, regardless of the current input values. */}
+        <form action={resetFiltersAction} className="mt-2">
+          <SubmitButton className="w-full" variant="outline" pendingText="Resetting…">
+            Reset to defaults
+          </SubmitButton>
         </form>
       </CardContent>
     </Card>
