@@ -38,21 +38,26 @@ create table if not exists daily_volume (
   primary key (item_id, city)
 );
 
--- settings: single row, global toggle
+-- settings: one row per client_id (cookie-based anonymous identity).
 create table if not exists settings (
-  id      int primary key default 1,
+  client_id text primary key,
   premium bool not null default false,
   region  text not null default 'west',
   disposable_cash  bigint  not null default 0,
   daily_target     bigint  not null default 0,
   min_margin_pct   numeric not null default 5,
   max_staleness_hr int     not null default 6,
-  min_daily_volume int     not null default 0,
-  last_price_fetch_at timestamptz,
-  constraint single_row check (id = 1)
+  min_daily_volume int     not null default 0
 );
 
-insert into settings (id) values (1) on conflict do nothing;
+-- fetch_state: single GLOBAL row for the shared price-fetch cooldown (cron + manual).
+create table if not exists fetch_state (
+  id int primary key default 1,
+  last_price_fetch_at timestamptz,
+  constraint fetch_state_single_row check (id = 1)
+);
+
+insert into fetch_state (id) values (1) on conflict do nothing;
 
 -- recipes: empty in P1, populated P2
 create table if not exists recipes (
@@ -87,10 +92,12 @@ order by po.item_id, po.city, po.quality, po.side, po.observed_at desc, po.sourc
 -- Case-insensitive substring search over name + id (price checker search).
 create index if not exists idx_items_item_id_lower on items (lower(item_id));
 
--- Single-user favorites (no auth/user column in v1).
+-- Favorites: one set per client_id (cookie-based anonymous identity).
 create table if not exists favorites (
-  item_id    text primary key references items(item_id),
-  created_at timestamptz not null default now()
+  client_id  text not null,
+  item_id    text not null references items(item_id),
+  created_at timestamptz not null default now(),
+  primary key (client_id, item_id)
 );
 
 create extension if not exists pg_trgm;

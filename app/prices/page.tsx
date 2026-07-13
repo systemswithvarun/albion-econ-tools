@@ -1,5 +1,6 @@
 import { listFavorites, type ItemSearchResult } from '@/lib/prices'
 import { supabase } from '@/lib/supabase'
+import { getClientId } from '@/lib/client-id'
 import { PriceCheckerClient } from './_components/price-checker-client'
 
 export const dynamic = 'force-dynamic'
@@ -31,10 +32,11 @@ export default async function PriceCheckerPage(props: PageProps) {
     }
   }
 
-  // Pre-load user's favorites on the server
+  // Pre-load this client's favorites on the server (scoped by cookie client id).
+  const clientId = await getClientId()
   let initialFavorites: ItemSearchResult[] = []
   try {
-    initialFavorites = await listFavorites()
+    initialFavorites = await listFavorites(clientId)
   } catch (err) {
     console.error('Failed to load favorites on server:', err)
   }

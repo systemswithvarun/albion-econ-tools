@@ -6,6 +6,7 @@ import { ManualEntryForm } from './_components/manual-entry-form'
 import { ResultsTable } from './_components/results-table'
 import { FlipperItemSearch } from './_components/flipper-item-search'
 import { CITIES } from '@/lib/cities'
+import { getClientId } from '@/lib/client-id'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
@@ -20,9 +21,10 @@ export default async function FlipPage(props: {
   let scan
   let loadError: string | null = null
   try {
-    settings = await getFlipSettings()
+    const clientId = await getClientId()
+    settings = await getFlipSettings(clientId)
     if (focusItemId) {
-      const itemRoutes = await getRoutesForItem(focusItemId)
+      const itemRoutes = await getRoutesForItem(clientId, focusItemId)
       scan = {
         routes: itemRoutes,
         basketProfit: 0,

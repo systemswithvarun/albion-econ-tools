@@ -128,13 +128,19 @@ export async function getLivePricesForItem(itemId: string): Promise<LivePrice[]>
   return reduceLivePrices(rows)
 }
 
-/** Favorites joined to items for names; paginated. */
-export async function listFavorites(opts?: { limit?: number; offset?: number }): Promise<ItemSearchResult[]> {
+/** Favorites for one client, joined to items for names; paginated.
+ *  clientId null (first paint before the cookie round-trips) → empty list, no query. */
+export async function listFavorites(
+  clientId: string | null,
+  opts?: { limit?: number; offset?: number },
+): Promise<ItemSearchResult[]> {
+  if (!clientId) return []
   const limit = opts?.limit ?? 100
   const offset = opts?.offset ?? 0
   const { data, error } = await supabase
     .from('favorites')
     .select(`item_id, created_at, items!inner(${SELECT_COLS})`)
+    .eq('client_id', clientId)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
   if (error) throw error
@@ -142,17 +148,21 @@ export async function listFavorites(opts?: { limit?: number; offset?: number }):
   return ((data ?? []) as unknown as Row[]).map((r) => (Array.isArray(r.items) ? r.items[0] : r.items))
 }
 
-/** Add favorite (uppercases id, like guild entry). Idempotent on duplicate. */
-export async function addFavorite(itemId: string): Promise<void> {
+/** Add favorite for a client (uppercases id, like guild entry). Idempotent on duplicate. */
+export async function addFavorite(clientId: string, itemId: string): Promise<void> {
   const id = itemId.trim().toUpperCase()
   const { error } = await supabase
     .from('favorites')
-    .upsert({ item_id: id }, { onConflict: 'item_id', ignoreDuplicates: true })
+    .upsert({ client_id: clientId, item_id: id }, { onConflict: 'client_id,item_id', ignoreDuplicates: true })
   if (error) throw error
 }
 
-export async function removeFavorite(itemId: string): Promise<void> {
+export async function removeFavorite(clientId: string, itemId: string): Promise<void> {
   const id = itemId.trim().toUpperCase()
-  const { error } = await supabase.from('favorites').delete().eq('item_id', id)
+  const { error } = await supabase
+    .from('favorites')
+    .delete()
+    .eq('client_id', clientId)
+    .eq('item_id', id)
   if (error) throw error
 }

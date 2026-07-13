@@ -2,13 +2,16 @@
 
 import { revalidatePath } from 'next/cache'
 import { updateFlipSettings, addGuildPrice, rebuildWatchlist } from '@/lib/flip-data'
+import { getClientId } from '@/lib/client-id'
 
 export async function saveFiltersAction(formData: FormData): Promise<void> {
+  const clientId = await getClientId()
+  if (!clientId) throw new Error('No client id — reload to get a session cookie')
   const num = (k: string) => {
     const v = formData.get(k)
     return v === null || v === '' ? undefined : Number(v)
   }
-  await updateFlipSettings({
+  await updateFlipSettings(clientId, {
     disposableCash: num('disposableCash'),
     dailyTarget: num('dailyTarget'),
     minMarginPct: num('minMarginPct'),
@@ -19,7 +22,9 @@ export async function saveFiltersAction(formData: FormData): Promise<void> {
 }
 
 export async function setPremiumAction(premium: boolean): Promise<void> {
-  await updateFlipSettings({ premium })
+  const clientId = await getClientId()
+  if (!clientId) throw new Error('No client id — reload to get a session cookie')
+  await updateFlipSettings(clientId, { premium })
   revalidatePath('/flip')
 }
 

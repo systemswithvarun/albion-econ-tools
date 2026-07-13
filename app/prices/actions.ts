@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { addFavorite, removeFavorite, searchItems, getItemPrices, type ItemSearchResult, type LivePrice } from '@/lib/prices'
 import { supabase } from '@/lib/supabase'
+import { getClientId } from '@/lib/client-id'
 
 import { submitGuildPriceAction as baseSubmitGuildPriceAction } from '@/app/flip/actions'
 
@@ -11,12 +12,16 @@ export async function submitGuildPriceAction(formData: FormData): Promise<void> 
 }
 
 export async function addFavoriteAction(itemId: string): Promise<void> {
-  await addFavorite(itemId)
+  const clientId = await getClientId()
+  if (!clientId) throw new Error('No client id — reload to get a session cookie')
+  await addFavorite(clientId, itemId)
   revalidatePath('/prices')
 }
 
 export async function removeFavoriteAction(itemId: string): Promise<void> {
-  await removeFavorite(itemId)
+  const clientId = await getClientId()
+  if (!clientId) throw new Error('No client id — reload to get a session cookie')
+  await removeFavorite(clientId, itemId)
   revalidatePath('/prices')
 }
 

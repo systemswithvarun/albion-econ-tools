@@ -3,22 +3,57 @@ import { scanRoutes, type FlipRoute, type ItemMarket, type FlipFilters, type Pri
 
 export type FlipSettings = FlipFilters
 
-/** Read the single settings row, mapping DB columns to FlipFilters. */
-export async function getFlipSettings(): Promise<FlipSettings> {
+const SETTINGS_COLS = 'premium, disposable_cash, daily_target, min_margin_pct, max_staleness_hr, min_daily_volume'
+
+const DEFAULT_FLIP_SETTINGS: FlipSettings = {
+  premium: false,
+  disposableCash: 0,
+  dailyTarget: 0,
+  minMarginPct: 5,
+  maxStalenessHr: 6,
+  minDailyVolume: 0,
+}
+
+function mapSettingsRow(d: {
+  premium: boolean
+  disposable_cash: number | string
+  daily_target: number | string
+  min_margin_pct: number | string
+  max_staleness_hr: number
+  min_daily_volume: number
+}): FlipSettings {
+  return {
+    premium: d.premium,
+    disposableCash: Number(d.disposable_cash),
+    dailyTarget: Number(d.daily_target),
+    minMarginPct: Number(d.min_margin_pct),
+    maxStalenessHr: d.max_staleness_hr,
+    minDailyVolume: d.min_daily_volume,
+  }
+}
+
+/**
+ * Read one client's settings row. clientId null (first paint) → in-memory defaults, no
+ * write. First read for a known-but-unseen client inserts a defaults row, then returns it.
+ */
+export async function getFlipSettings(clientId: string | null): Promise<FlipSettings> {
+  if (!clientId) return { ...DEFAULT_FLIP_SETTINGS }
   const { data, error } = await supabase
     .from('settings')
-    .select('premium, disposable_cash, daily_target, min_margin_pct, max_staleness_hr, min_daily_volume')
-    .eq('id', 1)
-    .single()
+    .select(SETTINGS_COLS)
+    .eq('client_id', clientId)
+    .maybeSingle()
   if (error) throw error
-  return {
-    premium: data.premium,
-    disposableCash: Number(data.disposable_cash),
-    dailyTarget: Number(data.daily_target),
-    minMarginPct: Number(data.min_margin_pct),
-    maxStalenessHr: data.max_staleness_hr,
-    minDailyVolume: data.min_daily_volume,
+  if (!data) {
+    const { data: inserted, error: iErr } = await supabase
+      .from('settings')
+      .insert({ client_id: clientId })
+      .select(SETTINGS_COLS)
+      .single()
+    if (iErr) throw iErr
+    return mapSettingsRow(inserted)
   }
+  return mapSettingsRow(data)
 }
 
 export interface FlipSettingsUpdate {
@@ -30,16 +65,17 @@ export interface FlipSettingsUpdate {
   minDailyVolume?: number
 }
 
-export async function updateFlipSettings(patch: FlipSettingsUpdate): Promise<void> {
-  const row: Record<string, unknown> = {}
+/** Update (or first-time create) one client's settings row. */
+export async function updateFlipSettings(clientId: string, patch: FlipSettingsUpdate): Promise<void> {
+  const row: Record<string, unknown> = { client_id: clientId }
   if (patch.premium !== undefined) row.premium = patch.premium
   if (patch.disposableCash !== undefined) row.disposable_cash = patch.disposableCash
   if (patch.dailyTarget !== undefined) row.daily_target = patch.dailyTarget
   if (patch.minMarginPct !== undefined) row.min_margin_pct = patch.minMarginPct
   if (patch.maxStalenessHr !== undefined) row.max_staleness_hr = patch.maxStalenessHr
   if (patch.minDailyVolume !== undefined) row.min_daily_volume = patch.minDailyVolume
-  if (Object.keys(row).length === 0) return
-  const { error } = await supabase.from('settings').update(row).eq('id', 1)
+  // upsert so an unknown client's first write also creates the row.
+  const { error } = await supabase.from('settings').upsert(row, { onConflict: 'client_id' })
   if (error) throw error
 }
 
@@ -175,9 +211,9 @@ export async function getFlipMarkets(maxStalenessHr: number): Promise<ItemMarket
 /** Routes for a single item (price-checker's second entry mode). Reads that item's
  *  latest prices directly from price_observations (not the watchlist view) so it works
  *  for any item, then runs the same scan engine with current settings. */
-export async function getRoutesForItem(itemId: string): Promise<FlipRoute[]> {
+export async function getRoutesForItem(clientId: string | null, itemId: string): Promise<FlipRoute[]> {
   const id = itemId.trim().toUpperCase()
-  const settings = await getFlipSettings()
+  const settings = await getFlipSettings(clientId)
 
   const { data: item, error: iErr } = await supabase
     .from('items')

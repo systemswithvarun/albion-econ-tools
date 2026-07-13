@@ -53,9 +53,11 @@ export async function runPriceFetch(): Promise<FetchResult> {
     console.warn('[runPriceFetch] volume step failed:', e instanceof Error ? e.message : JSON.stringify(e))
   }
 
-  // Stamp the cooldown timestamp on every successful pull (both cron and manual).
+  // Stamp the GLOBAL cooldown timestamp on every successful pull (both cron and manual).
+  // Lives in fetch_state (single row) — the price DB is shared, so the cooldown is global,
+  // not per-client. Cron has no client_id, so this must not depend on one.
   const { error: tsErr } = await supabase
-    .from('settings')
+    .from('fetch_state')
     .update({ last_price_fetch_at: new Date().toISOString() })
     .eq('id', 1)
   if (tsErr) throw tsErr
@@ -66,7 +68,7 @@ export async function runPriceFetch(): Promise<FetchResult> {
 /** Read the last successful pull timestamp (ISO) for the cooldown guard. */
 export async function getLastPriceFetchAt(): Promise<string | null> {
   const { data, error } = await supabase
-    .from('settings')
+    .from('fetch_state')
     .select('last_price_fetch_at')
     .eq('id', 1)
     .single()

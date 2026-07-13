@@ -148,19 +148,29 @@ dbDescribe('getItemPrices (integration)', () => {
 
 dbDescribe('favorites (integration)', () => {
   const ID = 'T4_BAG'
+  const A = 'test-client-a'
+  const B = 'test-client-b'
   afterAll(async () => {
     const { removeFavorite } = await import('../prices')
-    await removeFavorite(ID)
+    await removeFavorite(A, ID)
+    await removeFavorite(B, ID)
   })
-  it('add/list/remove round-trip, idempotent add', async () => {
+  it('round-trip, idempotent add, and per-client isolation', async () => {
     const { addFavorite, removeFavorite, listFavorites } = await import('../prices')
-    await removeFavorite(ID)
-    await addFavorite(ID)
-    await addFavorite(ID)
-    const list = await listFavorites()
-    expect(list.some((r) => r.item_id === ID)).toBe(true)
-    await removeFavorite(ID)
-    const after = await listFavorites()
-    expect(after.some((r) => r.item_id === ID)).toBe(false)
+    await removeFavorite(A, ID)
+    await removeFavorite(B, ID)
+
+    await addFavorite(A, ID)
+    await addFavorite(A, ID) // idempotent — must not throw
+    const listA = await listFavorites(A)
+    expect(listA.some((r) => r.item_id === ID)).toBe(true)
+
+    // Isolation asserted by READING B's rows, not "column exists": B never sees A's favorite.
+    const listB = await listFavorites(B)
+    expect(listB.some((r) => r.item_id === ID)).toBe(false)
+
+    await removeFavorite(A, ID)
+    const afterA = await listFavorites(A)
+    expect(afterA.some((r) => r.item_id === ID)).toBe(false)
   })
 })
