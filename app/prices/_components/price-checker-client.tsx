@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useTransition } from 'react'
 import Link from 'next/link'
-import { Star, Search, Loader2, Edit2, Check, X, TrendingUp, Info, ArrowLeft, RefreshCw } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Star, Search, Loader2, Edit2, Check, X, TrendingUp, Info, ArrowLeft, RefreshCw, GripVertical, RotateCcw } from 'lucide-react'
 import { formatItemName } from '@/lib/display'
 import { CITIES, ROYAL_CITIES } from '@/lib/cities'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -20,10 +21,14 @@ import {
   removeFavoriteAction,
   submitGuildPriceAction,
   getWatchlistDataAction,
+  reorderFavoriteAction,
+  renumberFavoritesAction,
+  reautoFavoritesAction,
   type DailyVolumeRecord,
 } from '../actions'
-import type { ItemSearchResult, LivePrice } from '@/lib/prices'
+import type { ItemSearchResult, FavoriteItem, LivePrice } from '@/lib/prices'
 import { computeItemRoutes } from '@/lib/flip'
+import { moveItem, pinPositionFor, sortFavorites } from '@/lib/favorites-order'
 import { type FlipSettings } from '@/lib/flip-data'
 
 function formatRelativeTime(dateStr: string | null): string {
@@ -53,13 +58,14 @@ export function PriceCheckerClient({
   initialItem,
   initialSettings,
 }: {
-  initialFavorites: ItemSearchResult[]
+  initialFavorites: FavoriteItem[]
   initialItem: ItemSearchResult | null
   initialSettings: FlipSettings | null
 }) {
+  const router = useRouter()
   const [query, setQuery] = useState('')
   const [searchResults, setSearchResults] = useState<ItemSearchResult[]>([])
-  const [favorites, setFavorites] = useState<ItemSearchResult[]>(initialFavorites)
+  const [favorites, setFavorites] = useState<FavoriteItem[]>(initialFavorites)
   const [selectedItem, setSelectedItem] = useState<ItemSearchResult | null>(initialItem)
   const [prices, setPrices] = useState<LivePrice[]>([])
   const [volumes, setVolumes] = useState<DailyVolumeRecord[]>([])
@@ -74,6 +80,66 @@ export function PriceCheckerClient({
   const [watchlistPrices, setWatchlistPrices] = useState<Record<string, LivePrice[]>>({})
   const [watchlistVolumes, setWatchlistVolumes] = useState<Record<string, DailyVolumeRecord[]>>({})
   const [loadingWatchlist, setLoadingWatchlist] = useState(false)
+
+  // Drag-to-pin / re-auto state
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [orderPending, setOrderPending] = useState(false)
+
+  // The server owns the order, so re-sync whenever a revalidate hands us a new list.
+  useEffect(() => {
+    setFavorites(initialFavorites)
+  }, [initialFavorites])
+
+  /** Drop: pin the dragged item at a gap-based position; leave the others as they are. */
+  const handleDropOn = async (targetId: string) => {
+    const sourceId = draggingId
+    setDraggingId(null)
+    setDragOverId(null)
+    if (!sourceId || sourceId === targetId) return
+
+    const moved = moveItem(favorites, sourceId, targetId)
+    if (moved === favorites) return
+    const idx = moved.findIndex((f) => f.item_id === sourceId)
+    const position = pinPositionFor(moved, idx)
+
+    // Optimistic: apply the same rule the server will, so this matches a reload.
+    setFavorites(
+      sortFavorites(
+        moved.map((f) => (f.item_id === sourceId ? { ...f, sort_order: position ?? f.sort_order } : f)),
+      ),
+    )
+    setOrderPending(true)
+    try {
+      if (position === null) {
+        // Gap exhausted between two neighbouring pins — renumber the whole visible order.
+        await renumberFavoritesAction(moved.map((f) => f.item_id))
+      } else {
+        await reorderFavoriteAction(sourceId, position)
+      }
+      router.refresh()
+    } catch (err) {
+      console.error('Failed to save watchlist order:', err)
+      setFavorites(initialFavorites) // write failed — do not keep showing a fake order
+    } finally {
+      setOrderPending(false)
+    }
+  }
+
+  /** Re-auto: clear every pin, back to family + tier order. */
+  const handleResetOrder = async () => {
+    setOrderPending(true)
+    try {
+      await reautoFavoritesAction()
+      router.refresh() // server re-sorts by base_key/tier/enchant; client cannot
+    } catch (err) {
+      console.error('Failed to reset watchlist order:', err)
+    } finally {
+      setOrderPending(false)
+    }
+  }
+
+  const hasPins = favorites.some((f) => f.sort_order !== null)
 
   // Track which cell is being edited
   const [editingCell, setEditingCell] = useState<{
@@ -182,9 +248,12 @@ export function PriceCheckerClient({
         await removeFavoriteAction(item.item_id)
       })
     } else {
-      setFavorites((prev) => [item, ...prev])
+      // A new favorite is auto (sort_order null), so the server slots it by family+tier.
+      // Show it immediately, then refresh to pick up its real position.
+      setFavorites((prev) => [{ ...item, sort_order: null }, ...prev])
       startTransition(async () => {
         await addFavoriteAction(item.item_id)
+        router.refresh()
       })
     }
   }
@@ -386,6 +455,22 @@ export function PriceCheckerClient({
                     </Button>
                   </div>
                   
+                  {/* Reset order — clears every pin for this client, back to family+tier.
+                      Only meaningful once something is pinned. */}
+                  {hasPins && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleResetOrder}
+                      disabled={orderPending}
+                      className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                      title="Clear manual order and sort by family and tier"
+                    >
+                      <RotateCcw className={`size-3.5 ${orderPending ? 'animate-spin' : ''}`} />
+                      {orderPending ? 'Resetting…' : 'Reset order'}
+                    </Button>
+                  )}
+
                   {/* Refresh Button */}
                   <Button
                     variant="outline"
@@ -452,9 +537,50 @@ export function PriceCheckerClient({
                     const itemVolumes = watchlistVolumes[item.item_id] ?? []
 
                     return (
-                      <Card key={item.item_id} className="overflow-hidden border shadow-sm">
+                      <Card
+                        key={item.item_id}
+                        onDragOver={(e) => {
+                          if (!draggingId) return
+                          e.preventDefault() // required, or onDrop never fires
+                          setDragOverId(item.item_id)
+                        }}
+                        onDragLeave={() => setDragOverId((cur) => (cur === item.item_id ? null : cur))}
+                        onDrop={(e) => {
+                          e.preventDefault()
+                          handleDropOn(item.item_id)
+                        }}
+                        className={`overflow-hidden border shadow-sm transition-colors ${
+                          draggingId === item.item_id ? 'opacity-50' : ''
+                        } ${dragOverId === item.item_id && draggingId !== item.item_id ? 'border-primary ring-1 ring-primary' : ''}`}
+                      >
                         <CardHeader className="py-3.5 px-6 bg-muted/20 border-b flex flex-row items-center justify-between gap-4 flex-wrap">
                           <div className="flex items-center gap-2 flex-wrap">
+                            {/* Drag handle. Only the handle is draggable, so selecting the
+                                item name or editing a price still works normally. */}
+                            <span
+                              draggable
+                              onDragStart={() => setDraggingId(item.item_id)}
+                              onDragEnd={() => {
+                                setDraggingId(null)
+                                setDragOverId(null)
+                              }}
+                              role="button"
+                              tabIndex={-1}
+                              aria-label={`Reorder ${item.display_name}`}
+                              title="Drag to pin this item to a position"
+                              className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground -ml-1.5 shrink-0"
+                            >
+                              <GripVertical className="size-4" />
+                            </span>
+                            {item.sort_order !== null && (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] py-0 px-1.5 h-5 font-medium"
+                                title="Manually pinned — use Reset order to return to family and tier order"
+                              >
+                                Pinned
+                              </Badge>
+                            )}
                             <button
                               onClick={() => setSelectedItem(item)}
                               className="font-bold text-foreground text-sm sm:text-base hover:text-primary transition-colors text-left"

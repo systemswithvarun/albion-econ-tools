@@ -1,4 +1,4 @@
-import { listFavorites, type ItemSearchResult } from '@/lib/prices'
+import { listFavorites, type FavoriteItem } from '@/lib/prices'
 import { supabase } from '@/lib/supabase'
 import { getClientId } from '@/lib/client-id'
 import { getFlipSettings } from '@/lib/flip-data'
@@ -35,7 +35,7 @@ export default async function PriceCheckerPage(props: PageProps) {
 
   // Pre-load this client's favorites on the server (scoped by cookie client id).
   const clientId = await getClientId()
-  let initialFavorites: ItemSearchResult[] = []
+  let initialFavorites: FavoriteItem[] = []
   let initialSettings = null
   try {
     initialFavorites = await listFavorites(clientId)
