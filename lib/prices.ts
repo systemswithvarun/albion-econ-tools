@@ -218,6 +218,12 @@ export async function renumberFavorites(clientId: string, orderedItemIds: string
 }
 
 /** Add favorite for a client (uppercases id, like guild entry). Idempotent on duplicate. */
+export type DailyVolumeRecord = {
+  city: string
+  avg_sold: number
+  avg_price: number
+}
+
 export async function addFavorite(clientId: string, itemId: string): Promise<void> {
   const id = itemId.trim().toUpperCase()
   const { error } = await supabase
@@ -234,4 +240,108 @@ export async function removeFavorite(clientId: string, itemId: string): Promise<
     .eq('client_id', clientId)
     .eq('item_id', id)
   if (error) throw error
+}
+
+/**
+ * For a list of item IDs, checks freshness, fetches missing/stale prices from AODP,
+ * and returns the reduced live prices for all items grouped by item_id.
+ */
+export async function getMultipleItemsPrices(itemIds: string[]): Promise<Record<string, LivePrice[]>> {
+  if (itemIds.length === 0) return {}
+  const ids = itemIds.map(id => id.trim().toUpperCase())
+
+  // To determine freshness for each item:
+  // Query the latest observed_at for each item from price_observations
+  const { data: latestObs, error: lErr } = await supabase
+    .from('price_observations')
+    .select('item_id, observed_at')
+    .in('item_id', ids)
+    .order('item_id')
+    .order('observed_at', { ascending: false })
+
+  if (lErr) throw lErr
+
+  // Group by item_id and get the newest observed_at
+  const newestByItem = new Map<string, string>()
+  for (const row of latestObs ?? []) {
+    if (!newestByItem.has(row.item_id)) {
+      newestByItem.set(row.item_id, row.observed_at)
+    }
+  }
+
+  // Determine which items are stale (or have no data)
+  const staleIds: string[] = []
+  const now = Date.now()
+  for (const id of ids) {
+    const newest = newestByItem.get(id) ?? null
+    if (!isFresh(newest, now)) {
+      staleIds.push(id)
+    }
+  }
+
+  // Fetch stale items in batch from AODP
+  if (staleIds.length > 0) {
+    const fetched = await getCurrentPrices(staleIds, [...CITIES], ALL_QUALITIES)
+    if (fetched.length > 0) {
+      await upsertPriceObservations(fetched)
+    }
+  }
+
+  // Now read the live prices for all itemIds
+  const allRows = await selectAll<RawObservation>((from, to) =>
+    supabase
+      .from('price_observations')
+      .select('item_id, city, quality, side, price, source, observed_at')
+      .in('item_id', ids)
+      .order('observed_at', { ascending: false })
+      .range(from, to),
+  )
+
+  // Reduce prices per item_id
+  const results: Record<string, LivePrice[]> = {}
+  for (const id of ids) {
+    results[id] = []
+  }
+
+  // Group rows by item_id
+  const rowsByItem: Record<string, RawObservation[]> = {}
+  for (const r of allRows) {
+    const id = (r as any).item_id
+    if (!rowsByItem[id]) rowsByItem[id] = []
+    rowsByItem[id].push(r)
+  }
+
+  for (const id of ids) {
+    const itemRows = rowsByItem[id] ?? []
+    results[id] = reduceLivePrices(itemRows)
+  }
+
+  return results
+}
+
+/**
+ * Batch query average sold and price for a list of item IDs.
+ */
+export async function getMultipleItemsDailyVolume(itemIds: string[]): Promise<Record<string, DailyVolumeRecord[]>> {
+  if (itemIds.length === 0) return {}
+  const ids = itemIds.map(id => id.trim().toUpperCase())
+  const { data, error } = await supabase
+    .from('daily_volume')
+    .select('item_id, city, avg_sold, avg_price')
+    .in('item_id', ids)
+  if (error) throw error
+
+  const results: Record<string, DailyVolumeRecord[]> = {}
+  for (const id of ids) {
+    results[id] = []
+  }
+  for (const v of data ?? []) {
+    const itemId = v.item_id
+    results[itemId].push({
+      city: v.city,
+      avg_sold: v.avg_sold,
+      avg_price: v.avg_price,
+    })
+  }
+  return results
 }

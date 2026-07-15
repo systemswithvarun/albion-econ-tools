@@ -338,3 +338,28 @@ dbDescribe('favorites sort model (integration)', () => {
     await expect(setFavoriteSortOrder(A, 'T4_NONEXISTENT_NOPE', 100)).rejects.toThrow()
   })
 })
+
+dbDescribe('batch price and volume queries (integration)', () => {
+  const BAG = 'T4_BAG'
+  const CAPE = 'T4_CAPE'
+
+  it('getMultipleItemsPrices fetches and reduces prices for multiple items', async () => {
+    const { getMultipleItemsPrices } = await import('../prices')
+    const res = await getMultipleItemsPrices([BAG, CAPE])
+    expect(res).toBeDefined()
+    expect(res[BAG]).toBeDefined()
+    expect(res[CAPE]).toBeDefined()
+    if (res[BAG].length > 0) {
+      expect(res[BAG][0].city).toBeDefined()
+      expect(res[BAG][0].price).toBeGreaterThan(0)
+    }
+  })
+
+  it('getMultipleItemsDailyVolume queries volume for multiple items', async () => {
+    const { getMultipleItemsDailyVolume } = await import('../prices')
+    const res = await getMultipleItemsDailyVolume([BAG, CAPE])
+    expect(res).toBeDefined()
+    expect(res[BAG]).toBeDefined()
+    expect(res[CAPE]).toBeDefined()
+  })
+})
