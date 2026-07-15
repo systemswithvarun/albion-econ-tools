@@ -128,14 +128,45 @@ dbDescribe('searchItems (integration)', () => {
     const { searchItems } = await import('../prices')
     expect(await searchItems('   ')).toEqual([])
   })
+  // Migration 013: word_similarity scores the best extent inside the name, so a typo in
+  // one word of a long name still hits. Each case asserts the ITEM reached, not just a
+  // non-empty list — pre-013 'satchle' returned 0 rows and 'stachel' returned Steel Bar,
+  // and a length check alone would have called the second one a pass.
+  //
+  // Measured against live data, all three of these were broken before 013.
   it('matches display names and tolerates typos', async () => {
     const { searchItems } = await import('../prices')
     const exact = await searchItems('satchel')
     expect(exact.some((r) => /satchel/i.test(r.display_name))).toBe(true)
-    const typo1 = await searchItems('satchle')
-    const typo2 = await searchItems('stachel')
-    expect(typo1.length).toBeGreaterThan(0)
-    expect(typo2.length).toBeGreaterThan(0)
+
+    const cases: [string, RegExp][] = [
+      ['satchle', /satchel/i], // dropped/!swapped final pair
+      ['knigt', /knight/i], // missing letter
+      ['clamore', /claymore/i], // missing letter, long name
+    ]
+    for (const [typo, want] of cases) {
+      const rows = await searchItems(typo)
+      expect(rows.some((r) => want.test(r.display_name)), `${typo} should reach ${want}`).toBe(true)
+    }
+  })
+
+  it('does not return unrelated noise for a typo', async () => {
+    const { searchItems } = await import('../prices')
+    // Pre-013, whole-string similarity() surfaced 'Steel Bar' for 'stachel'. The 0.30
+    // word_similarity floor rejects it.
+    const rows = await searchItems('stachel')
+    expect(rows.some((r) => /steel bar/i.test(r.display_name))).toBe(false)
+  })
+
+  // KNOWN LIMIT, asserted so it is visible rather than assumed fixed: transposing two
+  // ADJACENT letters ('satchel' -> 'stachel') destroys ~3 of 8 trigrams, so it scores
+  // below the floor AND below unrelated words like 'Staff'. Lowering the threshold does
+  // not rescue it — it only admits more noise. Fixing this class of typo needs an edit
+  // -distance pass (e.g. levenshtein), not a trigram tweak.
+  it('does not (yet) tolerate an adjacent-letter transposition', async () => {
+    const { searchItems } = await import('../prices')
+    const rows = await searchItems('stachel')
+    expect(rows.some((r) => /satchel/i.test(r.display_name))).toBe(false)
   })
   it('returns [] for gibberish, not an error', async () => {
     const { searchItems } = await import('../prices')

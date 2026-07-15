@@ -114,9 +114,11 @@ create index if not exists idx_items_display_name_gin
 -- Family sort key index (see migration 010).
 create index if not exists idx_items_base_key on items (base_key);
 
--- Fuzzy item search: substring OR trigram-similar. Ordered so a matched family stays
--- contiguous and tier-ascending: family best-match desc -> base_key -> tier int -> enchant.
--- Tier comes from the int column, never the display string. Paginated.
+-- Fuzzy item search: substring OR word-extent-similar (see migration 013 — whole-string
+-- similarity() diluted long names, missing real typos while admitting noise). Ordered so
+-- a matched family stays contiguous and tier-ascending: family best-match desc ->
+-- base_key -> tier int -> enchant. Tier comes from the int column, never the display
+-- string. Paginated.
 create or replace function search_items(q text, lim int default 50, off int default 0)
 returns setof items
 language sql stable
@@ -124,9 +126,9 @@ as $$
   select i.*
   from items i
   where i.display_name ilike '%' || q || '%'
-     or similarity(i.display_name, q) > 0.2
+     or word_similarity(q, i.display_name) >= 0.30
   order by
-    max(similarity(i.display_name, q)) over (partition by i.base_key) desc nulls last,
+    max(word_similarity(q, i.display_name)) over (partition by i.base_key) desc nulls last,
     i.base_key asc,
     i.tier asc,
     i.enchant asc
