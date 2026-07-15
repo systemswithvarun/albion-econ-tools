@@ -141,8 +141,11 @@ function makeItemId(uniquename: string, enchant: number): string {
 // ---------------------------------------------------------------------------
 // Parsing: flatten every category into ItemRows, expanding enchant variants.
 // ---------------------------------------------------------------------------
-function parseItems(json: any): ItemRow[] {
-  const itemsObj = json?.items ?? json
+function parseItems(json: unknown): ItemRow[] {
+  // items.json is an XML->JSON conversion, so the top level is genuinely dynamic:
+  // narrow it rather than assert a shape we don't control.
+  const root = json && typeof json === 'object' ? (json as Record<string, unknown>) : null
+  const itemsObj = (root?.items ?? json) as Record<string, unknown> | null
   if (!itemsObj || typeof itemsObj !== 'object') {
     throw new Error('Unexpected items.json shape: no top-level `items` object found.')
   }

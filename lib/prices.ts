@@ -287,8 +287,9 @@ export async function getMultipleItemsPrices(itemIds: string[]): Promise<Record<
     }
   }
 
-  // Now read the live prices for all itemIds
-  const allRows = await selectAll<RawObservation>((from, to) =>
+  // Now read the live prices for all itemIds. The select carries item_id (needed to
+  // group), so the row type must too — RawObservation alone doesn't have it.
+  const allRows = await selectAll<RawObservation & { item_id: string }>((from, to) =>
     supabase
       .from('price_observations')
       .select('item_id, city, quality, side, price, source, observed_at')
@@ -306,7 +307,7 @@ export async function getMultipleItemsPrices(itemIds: string[]): Promise<Record<
   // Group rows by item_id
   const rowsByItem: Record<string, RawObservation[]> = {}
   for (const r of allRows) {
-    const id = (r as any).item_id
+    const id = r.item_id
     if (!rowsByItem[id]) rowsByItem[id] = []
     rowsByItem[id].push(r)
   }

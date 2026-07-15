@@ -34,7 +34,7 @@ create table if not exists daily_volume (
   item_id    text not null references items(item_id),
   city       text not null,
   avg_sold   int not null,
-  avg_price  int not null default 0,
+  avg_price  bigint not null default 0,   -- bigint: high-tier silver exceeds int range (012)
   fetched_at timestamptz not null default now(),
   primary key (item_id, city)
 );

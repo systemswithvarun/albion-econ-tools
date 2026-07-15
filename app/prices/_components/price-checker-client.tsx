@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useTransition } from 'react'
 import Link from 'next/link'
-import { Star, Search, Loader2, ArrowLeftRight, Edit2, Check, X, TrendingUp, Info, ArrowLeft, RefreshCw } from 'lucide-react'
+import { Star, Search, Loader2, Edit2, Check, X, TrendingUp, Info, ArrowLeft, RefreshCw } from 'lucide-react'
 import { formatItemName } from '@/lib/display'
 import { CITIES, ROYAL_CITIES } from '@/lib/cities'
 import { Button, buttonVariants } from '@/components/ui/button'
