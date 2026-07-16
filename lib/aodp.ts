@@ -11,15 +11,50 @@ export function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks
 }
 
-export function buildPriceUrl(itemIds: string[], cities: string[], qualities: number[]): string {
-  const ids = itemIds.join(',')
+// --- ID convention bridge ---
+//
+// The DB stores an enchant level as `_N` (T4_BAG_1) — the seed's makeItemId does
+// `.replace(/@/g,'_')`, and items.item_id is the FK target for price_observations and
+// daily_volume. AODP addresses the same item as `T4_BAG@1`.
+//
+// This is a silent failure if you get it wrong: AODP answers an UNKNOWN id with HTTP 200,
+// echoes the id back, and fills every price with 0 and the date 0001-01-01 — identical in
+// shape to a real item with no open orders. So a wrong id reads as "no data", not an error.
+
+/** One item to ask AODP about. enchant comes from items.enchant — see toAodpId. */
+export interface AodpItemRef {
+  item_id: string
+  enchant: number
+}
+
+/**
+ * DB id (`_N`) -> AODP id (`@N`).
+ *
+ * Uses the enchant COLUMN, never a regex on the id: T4_ARMOR_PLATE_SET1 has enchant 0 and
+ * legitimately ends in a digit, so a /_(\d)$/ rule would ask AODP for the nonexistent
+ * 'T4_ARMOR_PLATE_SET@1' and silently get zeros back.
+ */
+export function toAodpId(itemId: string, enchant: number): string {
+  if (enchant <= 0) return itemId
+  const suffix = `_${enchant}`
+  if (!itemId.endsWith(suffix)) return itemId
+  return `${itemId.slice(0, -suffix.length)}@${enchant}`
+}
+
+/** AODP id (`@N`) -> DB id (`_N`). Unambiguous: AODP only uses @ for the enchant level. */
+export function fromAodpId(aodpId: string): string {
+  return aodpId.replace(/@/g, '_')
+}
+
+export function buildPriceUrl(items: AodpItemRef[], cities: string[], qualities: number[]): string {
+  const ids = items.map((i) => toAodpId(i.item_id, i.enchant)).join(',')
   const locs = cities.join(',')
   const quals = qualities.join(',')
   return `${BASE}/api/v2/stats/prices/${ids}.json?locations=${locs}&qualities=${quals}`
 }
 
-export function buildHistoryUrl(itemIds: string[], city: string): string {
-  const ids = itemIds.join(',')
+export function buildHistoryUrl(items: AodpItemRef[], city: string): string {
+  const ids = items.map((i) => toAodpId(i.item_id, i.enchant)).join(',')
   return `${BASE}/api/v2/stats/history/${ids}.json?locations=${city}&time-scale=24`
 }
 
@@ -65,9 +100,12 @@ export function parseCurrentPrices(raw: AodpPriceRow[]): PriceObservationInsert[
   const rows: PriceObservationInsert[] = []
   for (const r of raw) {
     const city = r.city.replace(/\s+/g, '')
+    // Map the id back to the DB form — writing AODP's 'T4_BAG@1' verbatim would violate
+    // price_observations.item_id -> items(item_id).
+    const item_id = fromAodpId(r.item_id)
     if (r.sell_price_min > 0) {
       rows.push({
-        item_id: r.item_id,
+        item_id,
         city,
         quality: r.quality,
         side: 'sell_order',
@@ -78,7 +116,7 @@ export function parseCurrentPrices(raw: AodpPriceRow[]): PriceObservationInsert[
     }
     if (r.buy_price_max > 0) {
       rows.push({
-        item_id: r.item_id,
+        item_id,
         city,
         quality: r.quality,
         side: 'buy_order',
@@ -100,7 +138,7 @@ export function parseHistory(raw: AodpHistoryRow[]): DailyVolumeInsert[] {
     const avgPrice = priced.length > 0
       ? Math.round(priced.reduce((s, d) => s + (d.avg_price as number), 0) / priced.length)
       : 0
-    return { item_id: r.item_id, city: r.location.replace(/\s+/g, ''), avg_sold: avgSold, avg_price: avgPrice, fetched_at: now }
+    return { item_id: fromAodpId(r.item_id), city: r.location.replace(/\s+/g, ''), avg_sold: avgSold, avg_price: avgPrice, fetched_at: now }
   })
 }
 
@@ -115,11 +153,11 @@ async function fetchGzip(url: string): Promise<unknown> {
 }
 
 export async function getCurrentPrices(
-  itemIds: string[],
+  items: AodpItemRef[],
   cities: string[],
   qualities: number[]
 ): Promise<PriceObservationInsert[]> {
-  const chunks = chunkArray(itemIds, CHUNK_SIZE)
+  const chunks = chunkArray(items, CHUNK_SIZE)
   const all: PriceObservationInsert[] = []
   for (const chunk of chunks) {
     const url = buildPriceUrl(chunk, cities, qualities)
@@ -130,10 +168,10 @@ export async function getCurrentPrices(
 }
 
 export async function getHistory(
-  itemIds: string[],
+  items: AodpItemRef[],
   city: string
 ): Promise<DailyVolumeInsert[]> {
-  const chunks = chunkArray(itemIds, CHUNK_SIZE)
+  const chunks = chunkArray(items, CHUNK_SIZE)
   const all: DailyVolumeInsert[] = []
   for (const chunk of chunks) {
     const url = buildHistoryUrl(chunk, city)

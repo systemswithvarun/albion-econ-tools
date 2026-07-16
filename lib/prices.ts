@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { CITIES } from './cities'
-import { getCurrentPrices, type PriceObservationInsert } from './aodp'
+import { getCurrentPrices, type PriceObservationInsert, type AodpItemRef } from './aodp'
 import { upsertPriceObservations } from './items'
 
 export type Side = 'buy_order' | 'sell_order'
@@ -54,6 +54,21 @@ export function isFresh(newestObservedAt: string | null, now: number, windowMs =
 const ALL_QUALITIES = [1, 2, 3, 4, 5]
 
 /**
+ * Resolve item ids to the {item_id, enchant} refs the AODP layer needs. enchant must come
+ * from the column — it cannot be parsed off the id (T4_ARMOR_PLATE_SET1 is enchant 0 yet
+ * ends in a digit). Fails loud on an unknown id rather than quietly asking AODP for
+ * something that returns zeros.
+ */
+async function toItemRefs(ids: string[]): Promise<AodpItemRef[]> {
+  if (ids.length === 0) return []
+  const { data, error } = await supabase.from('items').select('item_id, enchant').in('item_id', ids)
+  if (error) throw error
+  const refs = (data ?? []) as AodpItemRef[]
+  if (refs.length === 0) throw new Error(`toItemRefs: none of ${ids.length} id(s) exist in items (e.g. ${ids[0]})`)
+  return refs
+}
+
+/**
  * Live prices for ANY item (price-checker engine). Fresh path: if the newest stored
  * observation is < 15 min old, return reduced DB rows. Stale/miss path: pull AODP for
  * all cities + qualities in one call, upsert (source 'aodp'), then return reduced rows.
@@ -74,7 +89,11 @@ export async function getItemPrices(itemId: string): Promise<LivePrice[]> {
     return getLivePricesForItem(id)
   }
 
-  const fetched: PriceObservationInsert[] = await getCurrentPrices([id], [...CITIES], ALL_QUALITIES)
+  const fetched: PriceObservationInsert[] = await getCurrentPrices(
+    await toItemRefs([id]),
+    [...CITIES],
+    ALL_QUALITIES,
+  )
   if (fetched.length > 0) await upsertPriceObservations(fetched)
   return getLivePricesForItem(id)
 }
@@ -281,7 +300,7 @@ export async function getMultipleItemsPrices(itemIds: string[]): Promise<Record<
 
   // Fetch stale items in batch from AODP
   if (staleIds.length > 0) {
-    const fetched = await getCurrentPrices(staleIds, [...CITIES], ALL_QUALITIES)
+    const fetched = await getCurrentPrices(await toItemRefs(staleIds), [...CITIES], ALL_QUALITIES)
     if (fetched.length > 0) {
       await upsertPriceObservations(fetched)
     }

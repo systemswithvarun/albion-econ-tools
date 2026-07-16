@@ -26,9 +26,12 @@ export async function runPriceFetch(): Promise<FetchResult> {
     return { items_fetched: 0, volume_ok: true, elapsed_ms: Date.now() - started }
   }
 
-  const itemIds = items.map((i) => i.item_id)
-  const qualityItems = items.filter((i) => i.has_quality).map((i) => i.item_id)
-  const noQualityItems = items.filter((i) => !i.has_quality).map((i) => i.item_id)
+  // Carry enchant through to the AODP layer — it needs the column to build `@N` ids and
+  // must not guess from the string (T4_ARMOR_PLATE_SET1 is enchant 0 but ends in a digit).
+  const toRef = (i: { item_id: string; enchant: number }) => ({ item_id: i.item_id, enchant: i.enchant })
+  const refs = items.map(toRef)
+  const qualityItems = items.filter((i) => i.has_quality).map(toRef)
+  const noQualityItems = items.filter((i) => !i.has_quality).map(toRef)
 
   const [withQualRows, noQualRows] = await Promise.all([
     qualityItems.length > 0
@@ -39,13 +42,23 @@ export async function runPriceFetch(): Promise<FetchResult> {
       : Promise.resolve([]),
   ])
 
-  await upsertPriceObservations([...withQualRows, ...noQualRows])
+  const priceRows = [...withQualRows, ...noQualRows]
+  // Guard: AODP answers an unknown id with 200 + all-zero prices, which parseCurrentPrices
+  // drops — so a wholly wrong id convention writes nothing and still "succeeds". A
+  // non-empty watchlist that yields no observations is a broken pull, not an empty market.
+  if (priceRows.length === 0) {
+    throw new Error(
+      `runPriceFetch: requested ${items.length} watchlist items but AODP returned no priced rows. ` +
+        `Check the item-id convention (DB uses _N, AODP expects @N) — an unknown id returns zeros, not an error.`,
+    )
+  }
+  await upsertPriceObservations(priceRows)
 
   // Volume is secondary data — a failure here must not fail the whole pull.
   let volume_ok = true
   try {
     for (const city of CITIES) {
-      const volumeRows = await getHistory(itemIds, city)
+      const volumeRows = await getHistory(refs, city)
       await upsertDailyVolume(volumeRows)
     }
   } catch (e) {
