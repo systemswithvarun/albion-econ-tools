@@ -139,7 +139,11 @@ export function PriceCheckerClient({
     }
   }
 
-  const hasPins = favorites.some((f) => f.sort_order !== null)
+  // NB: this app already uses "pin" to mean FAVORITE (the star reads "Pin Item", and the
+  // panels are "Pinned Favorites" / "Pinned Watchlist"). So sort_order is deliberately
+  // called a *custom order* here, never a "pin" — a favorited item is pinned whether or
+  // not it has been dragged.
+  const hasManualOrder = favorites.some((f) => f.sort_order !== null)
 
   // Track which cell is being edited
   const [editingCell, setEditingCell] = useState<{
@@ -432,9 +436,9 @@ export function PriceCheckerClient({
                   {favorites.length > 1 && (
                     <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                       <GripVertical className="size-3" />
-                      {hasPins
-                        ? 'Pinned items sort first; the rest follow family and tier.'
-                        : 'Sorted by family and tier — drag an item by its handle to pin it.'}
+                      {hasManualOrder
+                        ? 'Items you reordered come first; the rest follow family and tier.'
+                        : 'Sorted by family and tier — drag an item by its handle to reorder it.'}
                     </p>
                   )}
                 </div>
@@ -473,16 +477,16 @@ export function PriceCheckerClient({
                       variant="outline"
                       size="sm"
                       onClick={handleResetOrder}
-                      disabled={orderPending || !hasPins}
+                      disabled={orderPending || !hasManualOrder}
                       className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
                       title={
-                        hasPins
-                          ? 'Clear the manual order and sort by family and tier'
-                          : 'Already sorted by family and tier — drag an item by its handle to pin it'
+                        hasManualOrder
+                          ? 'Clear the custom order and sort by family and tier'
+                          : 'Already sorted by family and tier — drag an item by its handle to reorder it'
                       }
                     >
                       <RotateCcw className={`size-3.5 ${orderPending ? 'animate-spin' : ''}`} />
-                      {orderPending ? 'Resetting…' : hasPins ? 'Reset order' : 'Auto order'}
+                      {orderPending ? 'Resetting…' : hasManualOrder ? 'Reset order' : 'Auto order'}
                     </Button>
                   )}
 
@@ -555,9 +559,13 @@ export function PriceCheckerClient({
                       <Card
                         key={item.item_id}
                         onDragOver={(e) => {
-                          if (!draggingId) return
-                          e.preventDefault() // required, or onDrop never fires
-                          setDragOverId(item.item_id)
+                          // preventDefault unconditionally: it is what marks this a valid
+                          // drop target, and gating it on React state (draggingId) meant a
+                          // dragover arriving before that state flushed would silently kill
+                          // the drop. handleDropOn ignores drags that did not start here.
+                          e.preventDefault()
+                          e.dataTransfer.dropEffect = 'move'
+                          if (draggingId) setDragOverId(item.item_id)
                         }}
                         onDragLeave={() => setDragOverId((cur) => (cur === item.item_id ? null : cur))}
                         onDrop={(e) => {
@@ -574,7 +582,14 @@ export function PriceCheckerClient({
                                 item name or editing a price still works normally. */}
                             <span
                               draggable
-                              onDragStart={() => setDraggingId(item.item_id)}
+                              onDragStart={(e) => {
+                                // Firefox refuses to START a drag unless dataTransfer carries
+                                // data — without this the gesture silently does nothing and
+                                // sort_order is never written.
+                                e.dataTransfer.setData('text/plain', item.item_id)
+                                e.dataTransfer.effectAllowed = 'move'
+                                setDraggingId(item.item_id)
+                              }}
                               onDragEnd={() => {
                                 setDraggingId(null)
                                 setDragOverId(null)
@@ -582,7 +597,7 @@ export function PriceCheckerClient({
                               role="button"
                               tabIndex={-1}
                               aria-label={`Reorder ${item.display_name}`}
-                              title="Drag to pin this item to a position"
+                              title="Drag to move this item to a custom position"
                               className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground -ml-1.5 shrink-0"
                             >
                               <GripVertical className="size-4" />
@@ -591,9 +606,9 @@ export function PriceCheckerClient({
                               <Badge
                                 variant="secondary"
                                 className="text-[10px] py-0 px-1.5 h-5 font-medium"
-                                title="Manually pinned — use Reset order to return to family and tier order"
+                                title="You placed this item here — use Reset order to return to family and tier order"
                               >
-                                Pinned
+                                Custom order
                               </Badge>
                             )}
                             <button
