@@ -429,6 +429,14 @@ export function PriceCheckerClient({
                   <p className="text-xs text-muted-foreground">
                     Your custom set of monitored items, bypassing normal flip filters.
                   </p>
+                  {favorites.length > 1 && (
+                    <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                      <GripVertical className="size-3" />
+                      {hasPins
+                        ? 'Pinned items sort first; the rest follow family and tier.'
+                        : 'Sorted by family and tier — drag an item by its handle to pin it.'}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-4">
                   {/* View Toggle */}
@@ -455,19 +463,26 @@ export function PriceCheckerClient({
                     </Button>
                   </div>
                   
-                  {/* Reset order — clears every pin for this client, back to family+tier.
-                      Only meaningful once something is pinned. */}
-                  {hasPins && (
+                  {/* Order control. Always rendered once there is a list to order — it
+                      previously only appeared after something was pinned, which made
+                      ordering undiscoverable: the sole affordance was the drag handle,
+                      and the reset was hidden exactly when you went looking for it.
+                      The label reports the current ordering state. */}
+                  {favorites.length > 1 && (
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={handleResetOrder}
-                      disabled={orderPending}
+                      disabled={orderPending || !hasPins}
                       className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-                      title="Clear manual order and sort by family and tier"
+                      title={
+                        hasPins
+                          ? 'Clear the manual order and sort by family and tier'
+                          : 'Already sorted by family and tier — drag an item by its handle to pin it'
+                      }
                     >
                       <RotateCcw className={`size-3.5 ${orderPending ? 'animate-spin' : ''}`} />
-                      {orderPending ? 'Resetting…' : 'Reset order'}
+                      {orderPending ? 'Resetting…' : hasPins ? 'Reset order' : 'Auto order'}
                     </Button>
                   )}
 
