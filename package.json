@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check:edge": "node scripts/check-middleware-edge.mjs",
     "seed": "npx tsx db/seed/seed-items.ts",
     "backfill-names": "npx tsx db/seed/backfill-names.ts"
   },

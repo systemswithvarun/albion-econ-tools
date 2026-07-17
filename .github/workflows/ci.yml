@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Guard the Edge middleware import graph. Source-level and build-independent: fails
+      # fast if middleware can reach a server-only module (e.g. next/headers), which would
+      # 500 production with MIDDLEWARE_INVOCATION_FAILED. `next build` cannot catch this.
+      - run: pnpm check:edge
+
+      - run: pnpm lint
+
+      - run: pnpm test
+
+      - run: pnpm build
+        env:
+          # Build-time collection tolerates missing runtime secrets (lazy Supabase client);
+          # provide harmless placeholders so nothing reads process.env and throws at build.
+          SUPABASE_URL: https://placeholder.supabase.co
+          SUPABASE_SERVICE_KEY: placeholder
