@@ -30,6 +30,48 @@ import type { ItemSearchResult, FavoriteItem, LivePrice } from '@/lib/prices'
 import { computeItemRoutes } from '@/lib/flip'
 import { moveItem, pinPositionFor, sortFavorites } from '@/lib/favorites-order'
 import { type FlipSettings } from '@/lib/flip-data'
+import { classifyAge, freshnessColor, formatAge } from '@/lib/freshness'
+import { tierColor, tierBadge, tierFromId, cityTag } from '@/lib/item-colors'
+import { toBaseKey } from '@/db/seed/name-map'
+
+/** "FortSterling" -> "Fort Sterling". */
+function prettyCity(c: string): string {
+  return c.replace(/([a-z])([A-Z])/g, '$1 $2')
+}
+
+/** Strip the tier possessive from a display name: "Adept's Bag" -> "Bag". */
+function familyLabel(name: string): string {
+  return name.replace(/^[^\s]+'s\s+/, '')
+}
+
+interface Family {
+  key: string
+  label: string
+  variants: ItemSearchResult[] // one per tier (enchant 0), tier-ascending
+}
+
+/** §⑤ 1l: collapse flat search hits into base families, tier variants as a chip rail.
+ *  One representative (enchant 0, else lowest enchant) per tier keeps the rail to ~5–7 chips. */
+function groupIntoFamilies(results: ItemSearchResult[]): Family[] {
+  const fams = new Map<string, Map<number, ItemSearchResult>>()
+  const label = new Map<string, string>()
+  for (const r of results) {
+    const key = toBaseKey(r.item_id, r.enchant)
+    if (!fams.has(key)) {
+      fams.set(key, new Map())
+      label.set(key, familyLabel(r.display_name))
+    }
+    const byTier = fams.get(key)!
+    const existing = byTier.get(r.tier)
+    // Prefer the base (enchant 0) as the tier's representative chip.
+    if (!existing || r.enchant < existing.enchant) byTier.set(r.tier, r)
+  }
+  return [...fams.entries()].map(([key, byTier]) => ({
+    key,
+    label: label.get(key) ?? key,
+    variants: [...byTier.values()].sort((a, b) => a.tier - b.tier),
+  }))
+}
 
 function formatRelativeTime(dateStr: string | null): string {
   if (!dateStr) return 'no data'
@@ -371,45 +413,77 @@ export function PriceCheckerClient({
                     {query.trim() ? 'No items matched your search' : 'Your personal list is empty'}
                   </p>
                   <p className="text-xs text-muted-foreground/80 max-w-[240px] mx-auto">
-                    {query.trim() 
-                      ? 'Try double-checking the spelling or use abbreviations.' 
+                    {query.trim()
+                      ? 'Try double-checking the spelling or use abbreviations.'
                       : 'Search for any item and click the star to pin it here.'}
                   </p>
                 </div>
-              ) : (
+              ) : query.trim() ? (
+                // §⑤ 1l — tiered search: one base item per row, tiers as a chip rail.
                 <div className="divide-y divide-border/60">
-                  {itemsList.map((item) => {
+                  {groupIntoFamilies(searchResults).map((fam) => (
+                    <div key={fam.key} className="px-4 py-2.5">
+                      <div className="text-[13px] font-medium text-foreground mb-1.5 truncate">{fam.label}</div>
+                      <div className="flex flex-wrap gap-1">
+                        {fam.variants.map((v) => {
+                          const isSel = selectedItem?.item_id === v.item_id
+                          const c = tierColor(v.tier)
+                          return (
+                            <button
+                              key={v.item_id}
+                              type="button"
+                              onClick={() => setSelectedItem(v)}
+                              title={formatItemName({ display_name: v.display_name, item_id: v.item_id, enchant: v.enchant })}
+                              className="tnum text-[11px] font-semibold rounded px-1.5 py-0.5 border transition-colors cursor-pointer"
+                              style={
+                                isSel
+                                  ? { color: 'var(--primary-foreground)', background: c, borderColor: c }
+                                  : { color: c, borderColor: 'var(--border)', background: 'transparent' }
+                              }
+                            >
+                              T{v.tier}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                // No query → the pinned favorites, flat, as a quick nav list.
+                <div className="divide-y divide-border/60">
+                  {favorites.map((item) => {
                     const isFav = favorites.some((f) => f.item_id === item.item_id)
                     const isSelected = selectedItem?.item_id === item.item_id
                     return (
                       <div
                         key={item.item_id}
                         onClick={() => setSelectedItem(item)}
-                        className={`group px-4 py-3 text-sm cursor-pointer flex items-center justify-between transition-all hover:bg-muted/70 ${
-                          isSelected ? 'bg-primary/5 border-l-2 border-primary' : ''
+                        className={`group px-4 py-3 text-sm cursor-pointer flex items-center justify-between transition-all hover:bg-panel ${
+                          isSelected ? 'bg-accent' : ''
                         }`}
                       >
-                        <div className="flex flex-col min-w-0 pr-2">
-                          <span className="font-semibold truncate text-foreground text-sm">
+                        <div className="flex items-center gap-2 min-w-0 pr-2">
+                          <span className="tnum text-[10px] font-semibold flex-none" style={{ color: tierColor(tierFromId(item.item_id)) }}>
+                            {tierBadge(tierFromId(item.item_id), item.enchant)}
+                          </span>
+                          <span className="font-medium truncate text-foreground text-[13px]">
                             {formatItemName({
                               display_name: item.display_name,
                               item_id: item.item_id,
                               enchant: item.enchant,
                             })}
                           </span>
-                          <span className="font-mono text-[10px] text-muted-foreground truncate uppercase">
-                            {item.item_id} · T{item.tier}
-                          </span>
                         </div>
                         <Button
                           variant="ghost"
                           size="icon-sm"
                           onClick={(e) => handleToggleFavorite(e, item)}
-                          className="opacity-70 group-hover:opacity-100 hover:text-yellow-500 focus-visible:opacity-100"
+                          className="opacity-70 group-hover:opacity-100 hover:text-primary focus-visible:opacity-100"
                         >
                           <Star
                             className={`size-4 transition-transform group-active:scale-90 ${
-                              isFav ? 'fill-yellow-500 text-yellow-500' : 'text-muted-foreground'
+                              isFav ? 'fill-primary text-primary' : 'text-muted-foreground'
                             }`}
                           />
                         </Button>
@@ -551,18 +625,30 @@ export function PriceCheckerClient({
                     </div>
                   </div>
 
-                  {favorites.map((item) => {
-                    const itemPrices = watchlistPrices[item.item_id] ?? []
-                    const itemVolumes = watchlistVolumes[item.item_id] ?? []
-
-                    return (
-                      <Card
+                  {/* §④ 1k — The Watch: one compact row per item; the toggle swaps the
+                      right side between price and flip, order and items never move. */}
+                  <div className="rounded-lg border border-border bg-card overflow-hidden divide-y divide-hair">
+                    {favorites.map((item) => (
+                      <WatchRow
                         key={item.item_id}
+                        item={item}
+                        mode={viewMode}
+                        prices={watchlistPrices[item.item_id] ?? []}
+                        volumes={watchlistVolumes[item.item_id] ?? []}
+                        quality={selectedQuality}
+                        premium={initialSettings?.premium ?? false}
+                        dragging={draggingId === item.item_id}
+                        dragOver={dragOverId === item.item_id && draggingId !== item.item_id}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', item.item_id)
+                          e.dataTransfer.effectAllowed = 'move'
+                          setDraggingId(item.item_id)
+                        }}
+                        onDragEnd={() => {
+                          setDraggingId(null)
+                          setDragOverId(null)
+                        }}
                         onDragOver={(e) => {
-                          // preventDefault unconditionally: it is what marks this a valid
-                          // drop target, and gating it on React state (draggingId) meant a
-                          // dragover arriving before that state flushed would silently kill
-                          // the drop. handleDropOn ignores drags that did not start here.
                           e.preventDefault()
                           e.dataTransfer.dropEffect = 'move'
                           if (draggingId) setDragOverId(item.item_id)
@@ -572,96 +658,10 @@ export function PriceCheckerClient({
                           e.preventDefault()
                           handleDropOn(item.item_id)
                         }}
-                        className={`overflow-hidden border shadow-sm transition-colors ${
-                          draggingId === item.item_id ? 'opacity-50' : ''
-                        } ${dragOverId === item.item_id && draggingId !== item.item_id ? 'border-primary ring-1 ring-primary' : ''}`}
-                      >
-                        <CardHeader className="py-3.5 px-6 bg-muted/20 border-b flex flex-row items-center justify-between gap-4 flex-wrap">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {/* Drag handle. Only the handle is draggable, so selecting the
-                                item name or editing a price still works normally. */}
-                            <span
-                              draggable
-                              onDragStart={(e) => {
-                                // Firefox refuses to START a drag unless dataTransfer carries
-                                // data — without this the gesture silently does nothing and
-                                // sort_order is never written.
-                                e.dataTransfer.setData('text/plain', item.item_id)
-                                e.dataTransfer.effectAllowed = 'move'
-                                setDraggingId(item.item_id)
-                              }}
-                              onDragEnd={() => {
-                                setDraggingId(null)
-                                setDragOverId(null)
-                              }}
-                              role="button"
-                              tabIndex={-1}
-                              aria-label={`Reorder ${item.display_name}`}
-                              title="Drag to move this item to a custom position"
-                              className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground -ml-1.5 shrink-0"
-                            >
-                              <GripVertical className="size-4" />
-                            </span>
-                            {item.sort_order !== null && (
-                              <Badge
-                                variant="secondary"
-                                className="text-[10px] py-0 px-1.5 h-5 font-medium"
-                                title="You placed this item here — use Reset order to return to family and tier order"
-                              >
-                                Custom order
-                              </Badge>
-                            )}
-                            <button
-                              onClick={() => setSelectedItem(item)}
-                              className="font-bold text-foreground text-sm sm:text-base hover:text-primary transition-colors text-left"
-                            >
-                              {formatItemName({
-                                display_name: item.display_name,
-                                item_id: item.item_id,
-                                enchant: item.enchant,
-                              })}
-                            </button>
-                            <Badge variant="outline" className="font-mono text-[10px] uppercase py-0 px-1.5 h-5">
-                              T{item.tier}
-                            </Badge>
-                            {item.enchant > 0 && (
-                              <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-none font-semibold text-[10px] py-0 px-1.5 h-5">
-                                .{item.enchant}
-                              </Badge>
-                            )}
-                          </div>
-                          
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              onClick={() => setSelectedItem(item)}
-                              className="text-xs h-7 px-2 font-medium"
-                            >
-                              Inspect details
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={(e) => handleToggleFavorite(e, item)}
-                              className="text-yellow-500 hover:bg-yellow-500/10"
-                            >
-                              <Star className="size-4 fill-yellow-500 text-yellow-500" />
-                            </Button>
-                          </div>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                          {viewMode === 'price' ? (
-                            <div className="overflow-x-auto">
-                              {renderPriceGrid(item.item_id, itemPrices, itemVolumes)}
-                            </div>
-                          ) : (
-                            renderFlipEconomics(item, itemPrices, itemVolumes)
-                          )}
-                        </CardContent>
-                      </Card>
-                    )
-                  })}
+                        onInspect={() => setSelectedItem(item)}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -975,111 +975,6 @@ export function PriceCheckerClient({
     )
   }
 
-  // Flip Economics Renderer
-  function renderFlipEconomics(item: ItemSearchResult, itemPrices: LivePrice[], itemVolumes: DailyVolumeRecord[]) {
-    // Build ItemMarket
-    const buyQuotes = itemPrices.filter((p) => p.quality === selectedQuality && p.side === 'sell_order')
-    const sellQuotes = itemPrices.filter((p) => p.quality === selectedQuality && p.side === 'buy_order')
-    const volumeByCity: Record<string, number> = {}
-    itemVolumes.forEach((v) => { volumeByCity[v.city] = v.avg_sold })
-
-    const itemMarket = {
-      itemId: item.item_id,
-      baseName: item.display_name ?? item.item_id,
-      displayName: item.display_name,
-      enchant: item.enchant,
-      quality: selectedQuality,
-      category: item.category,
-      buyQuotes,
-      sellQuotes,
-      volumeByCity,
-    }
-
-    const premium = initialSettings?.premium ?? false
-    // Use computeItemRoutes to calculate flip economics (pure logic from lib/flip.ts)
-    const routes = computeItemRoutes(itemMarket, { premium }, new Date())
-
-    // If there are no valid routes, show message
-    if (routes.length === 0) {
-      return (
-        <div className="p-6 text-center text-sm text-muted-foreground border-t border-dashed bg-muted/10 rounded-b-lg">
-          No cross-city flip routes available (requires quotes in at least two different cities).
-        </div>
-      )
-    }
-
-    // Sort routes by net profit desc
-    routes.sort((a, b) => b.netPerUnit - a.netPerUnit)
-
-    return (
-      <div className="divide-y divide-border border-t max-h-[400px] overflow-y-auto custom-scrollbar font-sans">
-        {routes.map((r, i) => (
-          <div
-            key={`${r.buyCity}-${r.sellCity}-${i}`}
-            className="p-4 flex flex-col gap-1.5 hover:bg-muted/30 transition-colors"
-          >
-            {/* Line 1: Route header and BM flagged badge */}
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 flex-wrap text-sm">
-                <span className="font-semibold text-foreground">{r.buyCity}</span>
-                <span className="text-muted-foreground text-xs">→</span>
-                <span className="font-semibold text-foreground">{r.sellCity}</span>
-                {r.bmFlagged && r.sellCity === 'BlackMarket' && (
-                  <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border-none text-[9px] px-1.5 py-0.5 rounded-full animate-pulse whitespace-nowrap">
-                    🔥 BM Flagged
-                  </Badge>
-                )}
-              </div>
-              <div className="text-right shrink-0">
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
-                  r.netPerUnit > 0 ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-destructive/10 text-destructive'
-                }`}>
-                  {r.netPerUnit > 0 ? '+' : ''}{Math.round(r.netPerUnit).toLocaleString()} silver / unit
-                </span>
-              </div>
-            </div>
-
-            {/* Line 2: Prices and Age */}
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-              <div>
-                Buy @ <span className="font-semibold text-foreground font-mono">{Math.round(r.buyPrice).toLocaleString()}</span>
-                <span className="mx-2">|</span>
-                Sell @ <span className="font-semibold text-foreground font-mono">{Math.round(r.sellPrice).toLocaleString()}</span>
-              </div>
-              <div className="text-[10px] font-mono whitespace-nowrap">
-                Age: {r.buyAgeHr.toFixed(1)}h / {r.sellAgeHr.toFixed(1)}h
-              </div>
-            </div>
-
-            {/* Line 3: Gap line if Black Market */}
-            {r.bmGap && r.sellCity === 'BlackMarket' && (
-              <div className="text-[10px] text-muted-foreground font-mono leading-relaxed bg-muted/40 px-2 py-0.5 rounded border border-border/40 w-fit">
-                BM Gap: {r.bmGap.lowestAcquisition.toLocaleString()} → {r.bmGap.bmBuyOrder.toLocaleString()} (Floor: {Math.round(r.bmGap.floor).toLocaleString()})
-              </div>
-            )}
-
-            {/* Line 4: Margin % and Daily Volume */}
-            <div className="flex items-center gap-x-4 gap-y-1 flex-wrap text-[11px] text-muted-foreground font-medium pt-1.5 border-t border-border/30">
-              <div className="flex items-center gap-1">
-                <span>Margin:</span>
-                <span className={`font-semibold tabular-nums ${r.marginPct > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
-                  {r.marginPct.toFixed(1)}%
-                </span>
-              </div>
-              <div className="w-1.5 h-1.5 rounded-full bg-border" aria-hidden="true" />
-              <div className="flex items-center gap-1">
-                <span>Daily Vol:</span>
-                <span className="text-foreground font-semibold tabular-nums">
-                  {Math.round(r.dailyVolume).toLocaleString()}
-                </span>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    )
-  }
-
   // Sub-renderer for price cells
   function renderCell(itemId: string, city: string, side: 'buy_order' | 'sell_order', obs: LivePrice | undefined) {
     const isEditing = editingCell?.itemId === itemId && editingCell?.city === city && editingCell?.side === side
@@ -1169,4 +1064,153 @@ export function PriceCheckerClient({
       </div>
     )
   }
+}
+
+/** §④ 1k — one compact watch row. The PRICES/FLIPS toggle swaps only the right side;
+ *  the item, its tier badge, and its position never move. No live flip route ⇒ the row
+ *  dims, it never disappears. */
+function WatchRow({
+  item,
+  mode,
+  prices,
+  volumes,
+  quality,
+  premium,
+  dragging,
+  dragOver,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onInspect,
+}: {
+  item: FavoriteItem
+  mode: 'price' | 'flip'
+  prices: LivePrice[]
+  volumes: DailyVolumeRecord[]
+  quality: number
+  premium: boolean
+  dragging: boolean
+  dragOver: boolean
+  onDragStart: (e: React.DragEvent) => void
+  onDragEnd: () => void
+  onDragOver: (e: React.DragEvent) => void
+  onDragLeave: () => void
+  onDrop: (e: React.DragEvent) => void
+  onInspect: () => void
+}) {
+  const qp = prices.filter((p) => p.quality === quality)
+  const tier = tierFromId(item.item_id)
+  const name = formatItemName({ display_name: item.display_name, item_id: item.item_id, enchant: item.enchant })
+  const ageHrOf = (t?: string) => (t ? (Date.now() - new Date(t).getTime()) / 3_600_000 : Infinity)
+
+  // Price mode: cheapest royal buy (sell order) + the BM buy order you sell into.
+  const royalBuys = qp.filter((p) => p.side === 'sell_order' && (ROYAL_CITIES as readonly string[]).includes(p.city))
+  const bestBuy = royalBuys.reduce<LivePrice | undefined>((min, p) => (!min || p.price < min.price ? p : min), undefined)
+  const bmSell = qp.find((p) => p.city === 'BlackMarket' && p.side === 'buy_order')
+  const priceAge = Math.min(ageHrOf(bestBuy?.observed_at), ageHrOf(bmSell?.observed_at))
+  const priceFresh = classifyAge(priceAge)
+  const hasPrice = Boolean(bestBuy || bmSell)
+
+  // Flip mode: best cross-city route by net per unit.
+  const volumeByCity: Record<string, number> = {}
+  for (const v of volumes) volumeByCity[v.city] = v.avg_sold
+  const routes = computeItemRoutes(
+    {
+      itemId: item.item_id,
+      baseName: item.display_name ?? item.item_id,
+      displayName: item.display_name,
+      enchant: item.enchant,
+      quality,
+      category: item.category,
+      buyQuotes: qp.filter((p) => p.side === 'sell_order'),
+      sellQuotes: qp.filter((p) => p.side === 'buy_order'),
+      volumeByCity,
+    },
+    { premium },
+    new Date(),
+  ).sort((a, b) => b.netPerUnit - a.netPerUnit)
+  const best = routes[0]
+  const dim = mode === 'flip' && !best
+  const fmt = (n: number) => Math.round(n).toLocaleString()
+
+  return (
+    <div
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={`group flex items-center gap-2.5 h-11 px-3 transition-colors ${
+        dragging ? 'opacity-50' : 'hover:bg-panel'
+      } ${dragOver ? 'ring-1 ring-inset ring-primary' : ''} ${dim ? 'opacity-55' : ''}`}
+    >
+      <span
+        draggable
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        role="button"
+        tabIndex={-1}
+        aria-label={`Reorder ${name}`}
+        title="Drag to move this item to a custom position"
+        className="cursor-grab active:cursor-grabbing text-ink-dim opacity-0 group-hover:opacity-100 transition-opacity flex-none"
+      >
+        <GripVertical className="size-4" />
+      </span>
+      <span className="tnum text-[10px] font-semibold flex-none" style={{ color: tierColor(tier) }}>
+        {tierBadge(tier, item.enchant)}
+      </span>
+
+      <button onClick={onInspect} className="flex-1 min-w-0 text-left" title="Inspect prices">
+        <span className="block truncate text-[12.5px] font-medium text-foreground">{name}</span>
+        {mode === 'flip' && (
+          <span className="block truncate text-[10px] text-ink-dim">
+            {best ? `${prettyCity(best.buyCity)} → BM` : `no live route${Number.isFinite(priceAge) ? ` · price ${formatAge(priceAge)} old` : ''}`}
+          </span>
+        )}
+      </button>
+
+      {item.sort_order !== null && (
+        <span
+          className="tnum text-[8.5px] text-ink-dim border border-border rounded px-1 py-0.5 flex-none"
+          title="Custom position — Reset order returns to family + tier"
+        >
+          ●
+        </span>
+      )}
+
+      {mode === 'price' ? (
+        <>
+          <span className="text-right flex-none whitespace-nowrap leading-tight">
+            <span className="block tnum text-[11.5px] text-ink-num">
+              {bestBuy ? `${cityTag(bestBuy.city)} ${fmt(bestBuy.price)}` : '—'}
+            </span>
+            <span className="block tnum text-[9.5px] text-ink-dim">
+              {bmSell ? `BM ${fmt(bmSell.price)}` : 'BM —'}
+            </span>
+          </span>
+          <span
+            className="w-[5px] h-[26px] rounded-sm flex-none"
+            style={{ background: hasPrice ? freshnessColor(priceFresh) : 'var(--hair)' }}
+            title={hasPrice ? `data age ${formatAge(priceAge)}` : 'no data'}
+          />
+        </>
+      ) : (
+        <span className="text-right flex-none whitespace-nowrap leading-tight">
+          {best ? (
+            <>
+              <span
+                className="block tnum text-[12px] font-semibold"
+                style={{ color: best.netPerUnit >= 0 ? 'var(--gold-bright)' : 'var(--stale)' }}
+              >
+                {best.netPerUnit >= 0 ? '+' : ''}{fmt(best.netPerUnit)}
+              </span>
+              <span className="block tnum text-[9.5px] text-ink-dim">{best.marginPct.toFixed(0)}%</span>
+            </>
+          ) : (
+            <span className="tnum text-[11px]" style={{ color: 'var(--stale)' }}>stale</span>
+          )}
+        </span>
+      )}
+    </div>
+  )
 }
