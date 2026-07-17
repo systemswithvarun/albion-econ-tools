@@ -3,7 +3,7 @@ import { scanRoutes } from '@/lib/flip'
 import { FiltersForm } from './_components/filters-form'
 import { FlipControls } from './_components/flip-controls'
 import { ManualEntryForm } from './_components/manual-entry-form'
-import { ResultsTable } from './_components/results-table'
+import { Docket } from './_components/docket'
 import { FlipperItemSearch } from './_components/flipper-item-search'
 import { CITIES } from '@/lib/cities'
 import { getClientId } from '@/lib/client-id'
@@ -100,7 +100,7 @@ export default async function FlipPage(props: {
               </Link>
             </div>
           )}
-          <ResultsTable routes={routes} />
+          <Docket routes={routes} />
         </div>
       </div>
     </main>
