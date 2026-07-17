@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { CLIENT_ID_COOKIE } from '@/lib/client-id'
+import { CLIENT_ID_COOKIE } from '@/lib/client-id-shared'
 
 export function middleware(req: NextRequest) {
   // Secret-gate the cron endpoints.

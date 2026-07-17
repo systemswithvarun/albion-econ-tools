@@ -1,7 +1,10 @@
 import { cookies } from 'next/headers'
 
-/** Cookie name the middleware sets for anonymous per-browser identity. */
-export const CLIENT_ID_COOKIE = 'aep_client_id'
+// Re-exported from the Edge-safe module so server callers can keep importing it from here,
+// while the middleware imports it from '@/lib/client-id-shared' (never pulling next/headers
+// into the Edge bundle).
+export { CLIENT_ID_COOKIE } from './client-id-shared'
+import { CLIENT_ID_COOKIE } from './client-id-shared'
 
 /**
  * Read the anonymous client id from the request cookie (server components + server
